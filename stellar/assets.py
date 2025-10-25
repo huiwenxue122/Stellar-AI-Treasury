@@ -32,7 +32,32 @@ class AssetManager:
         self.cost_basis: Dict[str, float] = {}  # {asset: average_cost_per_unit}
         self.use_cost_basis = True  # Use cost basis instead of market price for portfolio valuation
         
+        # 💰 CAPITAL TRACKING: User's initial capital (default $1M, user-configurable)
+        self.initial_capital_usd: float = 1000000.0
+        
         self._initialize_assets()
+    
+    def set_initial_capital_usd(self, capital_usd: float, xlm_price: float):
+        """💰 Set user's initial capital and reset balances accordingly"""
+        self.initial_capital_usd = capital_usd
+        
+        # Calculate XLM amount at the given (fixed) price
+        xlm_amount = capital_usd / xlm_price
+        
+        # 🔧 IMPORTANT: Clear ALL simulated balances and reset with new XLM amount
+        # This ensures any previous initialization is overwritten
+        self.simulated_balances.clear()  # Clear existing balances
+        self.simulated_balances['xlm'] = xlm_amount  # Set new XLM balance
+        
+        # Also clear and reset cost basis
+        self.cost_basis.clear()
+        self.cost_basis['xlm'] = xlm_price
+        
+        print(f"✅ Initial capital set:")
+        print(f"   ${capital_usd:,.2f} USD → {xlm_amount:,.2f} XLM @ ${xlm_price}")
+        print(f"   Simulated balances reset: {self.simulated_balances}")
+        
+        return xlm_amount
     
     def reset_simulated_balances(self):
         """Reset all simulated balances to start fresh"""
@@ -62,9 +87,9 @@ class AssetManager:
             account = await self.horizon._get(f"/accounts/{account_id}")
             asset_info = self.assets[asset_name]
             
-            # 🔧 NEW LOGIC: Calculate XLM needed based on real balance and $1M target
-            # This makes the simulated balance realistic and based on actual chain data
-            TARGET_USD = 1000000  # Target: $1,000,000 USD portfolio
+            # 🔧 NEW LOGIC: Calculate XLM needed based on user's configured capital
+            # This makes the simulated balance realistic and user-configurable
+            TARGET_USD = self.initial_capital_usd  # Use user's configured capital
             
             for balance in account.get('balances', []):
                 if balance['asset_type'] == 'native' and asset_info.code == 'XLM':
@@ -73,14 +98,17 @@ class AssetManager:
                     # Initialize simulated balance if not exists
                     if self.simulation_mode and asset_name not in self.simulated_balances:
                         # 🔒 FIXED XLM PRICE: Use consistent $0.31 for initialization
-                        # This ensures portfolio value = $1M regardless of API price
+                        # This ensures portfolio value = user's target regardless of API price
                         FIXED_XLM_PRICE = 0.31
                         
-                        # Calculate XLM needed for $1M at fixed price
+                        # Calculate XLM needed for target USD at fixed price
                         xlm_needed = TARGET_USD / FIXED_XLM_PRICE
                         
                         # Store in simulated balances
                         self.simulated_balances[asset_name] = xlm_needed
+                        
+                        # Also set cost basis
+                        self.cost_basis['xlm'] = FIXED_XLM_PRICE
                         
                         # Also get real-time price for information (not used in calculations)
                         try:

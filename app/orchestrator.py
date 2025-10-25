@@ -6,6 +6,7 @@ from agents.agent_system_with_function_tools import get_multi_agent_orchestrator
 from stellar.wallet import Wallet
 from stellar.horizon import Horizon
 from stellar.assets import AssetManager
+from app.tier_manager import TierManager
 from dotenv import load_dotenv
 from typing import Dict, Any
 
@@ -57,27 +58,74 @@ class TreasuryOrchestrator:
         self.config = CFG
         self.wallet = W  # 🔧 Store wallet as instance variable for safer access
         
+        # 🌍 Initialize Tier Manager for user-level customization
+        self.tier_manager = TierManager(CFG)
+        self.current_user_tier = self.tier_manager.default_tier
+        print(f"✅ Tier Manager initialized (default tier: {self.current_user_tier})")
+        
         # 初始化Multi-Agent系统
         # 使用新的 Function Calling 版本
-        self.multi_agent = get_multi_agent_orchestrator_with_tools(CFG, TR, RK, PAY)
+        self.multi_agent = get_multi_agent_orchestrator_with_tools(CFG, TR, RK, PAY, self.tier_manager)
         self.use_multi_agent = CFG.get('agent_system', {}).get('enabled', False)
         
         print("✅ Multi-Agent System initialized with Function Calling (10 strategy tools)")
+        print(f"   🌍 Tier-aware prompts enabled (current tier: {self.current_user_tier})")
         
         # 用户配置的资产
         self.selected_assets = []
         self.hedge_currency = 'USDC'
         
+    def set_user_tier(self, tier_name: str):
+        """Set the user tier and apply tier-specific restrictions"""
+        if tier_name not in ['beginner', 'intermediate', 'advanced']:
+            print(f"⚠️  Invalid tier '{tier_name}'. Using default: {self.tier_manager.default_tier}")
+            tier_name = self.tier_manager.default_tier
+        
+        self.current_user_tier = tier_name
+        tier_config = self.tier_manager.get_tier_config(tier_name)
+        
+        print(f"✅ User tier set to: {tier_name.upper()}")
+        print(f"   Risk Budget: {tier_config.risk_budget}")
+        print(f"   Max VaR: {tier_config.max_portfolio_var * 100}%")
+        print(f"   Allowed Assets: {', '.join(tier_config.allowed_assets) if tier_config.allowed_assets != 'all' else 'ALL'}")
+        
+        return True
+    
+    def set_initial_capital(self, capital_usd: float):
+        """💰 Set user's initial capital in USD and convert to XLM"""
+        self.initial_capital_usd = capital_usd
+        
+        # 🔒 FIXED XLM PRICE: Use the same fixed price as the rest of the system
+        FIXED_XLM_PRICE = 0.31
+        xlm_amount = capital_usd / FIXED_XLM_PRICE
+        
+        print(f"\n💰 Initial Capital Configuration:")
+        print(f"   USD Amount: ${capital_usd:,.2f}")
+        print(f"   XLM Price (Fixed): ${FIXED_XLM_PRICE}")
+        print(f"   XLM Equivalent: {xlm_amount:,.2f} XLM")
+        
+        # Update asset manager with this capital
+        self.asset_manager.set_initial_capital_usd(capital_usd, FIXED_XLM_PRICE)
+        
+        return xlm_amount
+    
     def configure_assets(self, selected_assets: list, hedge_currency: str = 'USDC'):
         """配置用户选择的交易资产和对冲币种"""
-        self.selected_assets = selected_assets
+        # 🌍 Filter assets based on user tier
+        filtered_assets = self.tier_manager.filter_allowed_assets(selected_assets, self.current_user_tier)
+        
+        if len(filtered_assets) < len(selected_assets):
+            removed = set(selected_assets) - set(filtered_assets)
+            print(f"⚠️  Some assets were filtered out due to tier restrictions: {', '.join(removed)}")
+        
+        self.selected_assets = filtered_assets
         self.hedge_currency = hedge_currency
         
         # 更新config中的trading_assets
         if 'portfolio_optimization' not in self.config:
             self.config['portfolio_optimization'] = {}
         
-        self.config['portfolio_optimization']['trading_assets'] = selected_assets
+        self.config['portfolio_optimization']['trading_assets'] = filtered_assets
         self.config['portfolio_optimization']['usdc_hedge'] = {
             'enabled': True,
             'hedge_currency': hedge_currency,
@@ -85,7 +133,7 @@ class TreasuryOrchestrator:
         }
         
         print(f"✅ 资产配置完成:")
-        print(f"   交易资产: {', '.join(selected_assets)}")
+        print(f"   交易资产: {', '.join(filtered_assets)}")
         print(f"   对冲币种: {hedge_currency}")
         
         return True
@@ -97,14 +145,20 @@ class TreasuryOrchestrator:
             if selected_assets:
                 self.configure_assets(selected_assets, hedge_currency or 'USDC')
             
-            # 💰 Initialize simulated balances with $1M in XLM
+            # 💰 Initialize simulated balances with user's configured capital
             if self.asset_manager.simulation_mode:
                 FIXED_XLM_PRICE = 0.31
-                TARGET_USD = 1_000_000  # $1 million
+                # 🔧 Use user's configured capital instead of hardcoded $1M
+                TARGET_USD = self.asset_manager.initial_capital_usd
                 xlm_needed = TARGET_USD / FIXED_XLM_PRICE
-                self.asset_manager.simulated_balances['xlm'] = xlm_needed
-                self.asset_manager.cost_basis['xlm'] = FIXED_XLM_PRICE
-                print(f"✅ Initialized simulated XLM balance: {xlm_needed:,.2f} XLM (≈${TARGET_USD:,.2f})")
+                
+                # Only set if not already set by set_initial_capital_usd()
+                if 'xlm' not in self.asset_manager.simulated_balances:
+                    self.asset_manager.simulated_balances['xlm'] = xlm_needed
+                    self.asset_manager.cost_basis['xlm'] = FIXED_XLM_PRICE
+                    print(f"✅ Initialized simulated XLM balance: {xlm_needed:,.2f} XLM (≈${TARGET_USD:,.2f})")
+                else:
+                    print(f"✅ Using existing simulated XLM balance: {self.asset_manager.simulated_balances['xlm']:,.2f} XLM (set by user config)")
             
             # Update asset data
             await self.asset_manager.update_asset_data(self.wallet.public)

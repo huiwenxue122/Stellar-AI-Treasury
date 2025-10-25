@@ -3,6 +3,103 @@ network:
   passphrase: "Test SDF Network ; September 2015"
   use_testnet: true
 
+# 🌍 User Tier System - Global Accessibility
+user_tier_system:
+  enabled: true
+  default_tier: "beginner"  # Options: beginner, intermediate, advanced
+  
+  tiers:
+    beginner:
+      risk_budget: "very_low"
+      max_portfolio_var: 0.02  # 2% VaR
+      max_single_asset_percent: 30
+      
+      # 🎯 使用风险等级过滤（新版）
+      allowed_risk_levels: ["safe"]  # 只能选择安全资产
+      
+      # 保留旧版配置以兼容
+      allowed_assets:
+        - USDC
+        - USDT
+        - PAXG
+        - XAUT
+        - GOLD
+        - BENJI
+        - REIT
+      allowed_asset_types:
+        - stablecoin
+        - bond_token
+        - gold_backed
+        - rwa_commodity
+        - rwa_real_estate
+      
+      prompt_style: "educational_friendly"
+      explanation_depth: "high"
+      safety_focus: true
+      use_analogies: true
+      localization:
+        languages: ["en", "es", "sw", "ar", "zh"]  # English, Spanish, Swahili, Arabic, Chinese
+        enable_tts: true  # Text-to-Speech for low-literacy users
+      
+    intermediate:
+      risk_budget: "medium"
+      max_portfolio_var: 0.05  # 5% VaR
+      max_single_asset_percent: 40
+      
+      # 🎯 使用风险等级过滤（新版）
+      allowed_risk_levels: ["safe", "moderate"]  # 安全 + 中等风险
+      
+      # 保留旧版配置以兼容
+      allowed_assets:
+        - USDC
+        - USDT
+        - PAXG
+        - XAUT
+        - GOLD
+        - BENJI
+        - REIT
+        - BTC
+        - ETH
+        - SOL
+        - ARB
+        - LINK
+        - AAVE
+      allowed_asset_types:
+        - stablecoin
+        - major_crypto
+        - defi_token
+        - rwa_commodity
+        - rwa_bond
+        - rwa_real_estate
+      
+      prompt_style: "balanced_metrics"
+      explanation_depth: "moderate"
+      show_metrics: true
+      metrics_to_show: ["var", "sharpe", "volatility"]
+      localization:
+        languages: ["en", "es", "zh"]
+        enable_tts: false
+      
+    advanced:
+      risk_budget: "full"
+      max_portfolio_var: 0.10  # 10% VaR
+      max_single_asset_percent: 50
+      
+      # 🎯 使用风险等级过滤（新版）
+      allowed_risk_levels: ["safe", "moderate", "high_risk"]  # 全部资产
+      
+      allowed_assets: "all"  # All assets enabled
+      allowed_asset_types: "all"
+      
+      prompt_style: "technical_quant"
+      explanation_depth: "minimal"
+      show_raw_data: true
+      enable_derivatives: true
+      enable_structured_strategies: true
+      localization:
+        languages: ["en"]
+        enable_tts: false
+
 # Multi-Agent System配置
 agent_system:
   enabled: true
@@ -149,28 +246,112 @@ assets:
     coingecko_id: "fetch-ai"
   
   # RWA - Real World Assets
-  bond:
-    code: BOND
-    issuer: "GDSTRSHXHGJ7ZIVRBXEYE5Q74XUVCUSEKEBR7UCHEUUEK72N7I7KJ6JH"
+  benji:
+    code: BENJI
+    # 🏦 Franklin Templeton OnChain U.S. Government Money Fund (FOBXX)
+    # This is a real tokenized money market fund on Stellar
+    # Note: Issuer address should be verified from Franklin Templeton's official documentation
+    # For production, obtain the actual issuer address from: https://digitalassets.franklintempleton.com/benji/
+    issuer: "FRANKLIN_TEMPLETON_ISSUER_TBD"  # TODO: Replace with actual Stellar issuer address
     type: rwa_bond
     category: income
-    underlying: "US Treasury Bonds"
+    underlying: "US Government Money Market Fund (FOBXX)"
+    description: "Franklin Templeton's BENJI - World's first tokenized money market fund on blockchain"
+    fund_name: "Franklin OnChain U.S. Government Money Fund"
+    fund_ticker: "FOBXX"
+    backed_by: "US Treasury securities and government-backed assets"
+    risk_level: 0.1  # Very low risk (government-backed)
+    yield_type: "stable_income"
+    note: "Real tokenized fund - requires KYC/AML compliance for actual trading"
     
   gold:
     code: GOLD
-    issuer: "GDUKMGUGDZQK6YHVD4PBRXWXLD6THNCJENQLDNDB3KPO5RZYBWE4XK2P"
+    # Note: Generic gold token - for demo purposes
+    # In production, replace with specific gold-backed token like PAXG or XAUT
+    issuer: "DEMO_GOLD_ISSUER"  # Placeholder - replace with actual gold token issuer
     type: rwa_commodity
     category: safe_haven
     underlying: "Physical Gold"
+    note: "Placeholder - recommend using PAXG or XAUT for real gold exposure"
     
   reit:
     code: REIT
-    issuer: "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+    # Note: Real estate token - placeholder for demo
+    # Real Stellar REITs would require specific tokenized real estate issuers
+    issuer: "DEMO_REIT_ISSUER"  # Placeholder - replace with actual real estate token issuer
     type: rwa_real_estate
     category: income
     underlying: "Commercial Real Estate"
+    note: "Placeholder - in production, integrate with actual tokenized real estate on Stellar"
+  
+  # Gold-backed tokens
+  paxg:
+    code: PAXG
+    # PAX Gold is primarily an Ethereum ERC-20 token by Paxos
+    # Not natively available on Stellar blockchain
+    # For Stellar, would need a bridge or wrapped version
+    issuer: "NOT_ON_STELLAR"  # PAXG is Ethereum-based, not Stellar native
+    type: rwa_commodity
+    category: safe_haven
+    underlying: "Physical Gold (1 oz per token)"
+    coingecko_id: "pax-gold"
+    risk_level: 0.3
+    blockchain: "Ethereum"
+    note: "PAX Gold exists on Ethereum, not Stellar. Price data via CoinGecko API for demo."
+  
+  xaut:
+    code: XAUT
+    # Tether Gold is primarily an Ethereum ERC-20 token by Tether
+    # Also available on Tron, but not natively on Stellar
+    issuer: "NOT_ON_STELLAR"  # XAUT is Ethereum/Tron-based, not Stellar native
+    type: rwa_commodity
+    category: safe_haven
+    underlying: "Tether Gold (1 oz per token)"
+    coingecko_id: "tether-gold"
+    risk_level: 0.3
+    blockchain: "Ethereum"
+    note: "Tether Gold exists on Ethereum/Tron, not Stellar. Price data via CoinGecko API for demo."
 
-# 资产分类
+# 🎯 资产风险分级（用于用户层级过滤）
+asset_risk_classification:
+  safe:  # 所有用户都可选择（Beginner, Intermediate, Advanced）
+    stablecoins:
+      - USDC
+      - USDT
+    
+    gold_backed:
+      - PAXG
+      - XAUT
+      - GOLD
+    
+    bond_tokens:
+      - BENJI  # Franklin Templeton tokenized money market fund
+    
+    real_estate:
+      - REIT
+  
+  moderate:  # Intermediate + Advanced 可选择
+    large_cap_crypto:
+      - BTC
+      - ETH
+    
+    defi_blue_chips:
+      - LINK
+      - AAVE
+    
+    layer1_layer2:
+      - SOL
+      - ARB
+  
+  high_risk:  # 仅 Advanced 可选择
+    small_cap:
+      - LDO
+      - FET
+    
+    native:
+      - XLM  # XLM 作为 gas，放在 high_risk 但可能需要特殊处理
+
+# 资产分类（旧版，保留兼容性）
 asset_categories:
   safe_haven:
     - usdc
@@ -183,7 +364,7 @@ asset_categories:
     - eth
   
   income:
-    - bond
+    - benji  # Franklin Templeton tokenized fund
     - reit
   
   volatile:
