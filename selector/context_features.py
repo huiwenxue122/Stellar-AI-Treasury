@@ -10,6 +10,13 @@ from typing import Dict, Any, Optional, Tuple
 import warnings
 warnings.filterwarnings('ignore')
 
+# 导入新闻情感分析
+try:
+    from news import SentimentAnalyzer, get_global_cache
+    NEWS_AVAILABLE = True
+except ImportError:
+    NEWS_AVAILABLE = False
+
 def build_regime_features(prices: pd.Series, vol_lookback: int = 20, 
                          additional_features: Optional[pd.DataFrame] = None) -> pd.DataFrame:
     """
@@ -53,6 +60,10 @@ def build_regime_features(prices: pd.Series, vol_lookback: int = 20,
     
     # 技术指标特征
     features.update(_build_technical_features(prices))
+    
+    # 📰 新闻情感特征
+    if NEWS_AVAILABLE:
+        features.update(_build_news_sentiment_features(prices))
     
     # 合并额外特征
     if additional_features is not None:
@@ -388,6 +399,48 @@ def main():
     
     print("\n" + "=" * 60)
     print("🎉 特征构建演示完成！")
+
+def _build_news_sentiment_features(prices: pd.Series) -> Dict[str, pd.Series]:
+    """构建新闻情感特征"""
+    features = {}
+    
+    try:
+        # 获取新闻情感分析器
+        sentiment_analyzer = SentimentAnalyzer()
+        cache = get_global_cache()
+        
+        # 为每个时间点计算情感分数
+        sentiment_scores = []
+        for timestamp in prices.index:
+            # 获取该时间点的新闻情感
+            sentiment = cache.get_sentiment_for_asset('BTC', timestamp)  # 使用BTC作为基准
+            if sentiment:
+                sentiment_scores.append(sentiment.get('score', 0.0))
+            else:
+                sentiment_scores.append(0.0)
+        
+        # 创建情感特征
+        features['news_sentiment'] = pd.Series(sentiment_scores, index=prices.index)
+        features['news_sentiment_ma5'] = features['news_sentiment'].rolling(5).mean()
+        features['news_sentiment_ma20'] = features['news_sentiment'].rolling(20).mean()
+        features['news_sentiment_trend'] = features['news_sentiment_ma5'] - features['news_sentiment_ma20']
+        
+        # 情感状态
+        sentiment_median = features['news_sentiment'].median()
+        features['news_sentiment_state'] = np.where(
+            features['news_sentiment'] > sentiment_median, 'positive', 'negative'
+        )
+        
+    except Exception as e:
+        print(f"⚠️  新闻情感特征构建失败: {e}")
+        # 使用默认值
+        features['news_sentiment'] = pd.Series(0.0, index=prices.index)
+        features['news_sentiment_ma5'] = pd.Series(0.0, index=prices.index)
+        features['news_sentiment_ma20'] = pd.Series(0.0, index=prices.index)
+        features['news_sentiment_trend'] = pd.Series(0.0, index=prices.index)
+        features['news_sentiment_state'] = pd.Series('neutral', index=prices.index)
+    
+    return features
 
 if __name__ == "__main__":
     main()

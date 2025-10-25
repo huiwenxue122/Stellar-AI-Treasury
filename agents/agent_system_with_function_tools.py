@@ -16,6 +16,7 @@ from agents.agent_conversation_logger import get_conversation_logger
 from strategies.library import get_strategy_library
 from selector.context_features import build_regime_features
 from selector.thompson_selector import ThompsonSelector, ThompsonSelectorConfig, create_selector
+from news import CryptoNewsFetcher, SentimentAnalyzer, get_global_cache
 
 @dataclass
 class TradingSignalWithRisk:
@@ -38,11 +39,15 @@ class TradingSignalWithRisk:
 class MultiAgentOrchestratorWithTools:
     """Multi-Agent Orchestrator using Function Calling"""
     
-    def __init__(self, config: dict, trading_agent, risk_agent, payment_agent):
+    def __init__(self, config: dict, trading_agent, risk_agent, payment_agent, tier_manager=None):
         self.config = config
         self.trading_agent = trading_agent
         self.risk_agent = risk_agent
         self.payment_agent = payment_agent
+        
+        # 🌍 Tier Manager for user-level customization
+        self.tier_manager = tier_manager
+        self.current_user_tier = tier_manager.default_tier if tier_manager else 'intermediate'
         
         # Initialize OpenAI client
         self.openai_client = AsyncOpenAI(api_key=os.getenv('OPENAI_API_KEY'))
@@ -71,8 +76,60 @@ class MultiAgentOrchestratorWithTools:
         # Define strategy tools for OpenAI Function Calling
         self.strategy_tools = self._create_strategy_tools()
         
+        # 📰 NEW: Initialize news sentiment system
+        self.news_fetcher = CryptoNewsFetcher()
+        self.sentiment_analyzer = SentimentAnalyzer(method='textblob')  # Free, no API key needed
+        self.sentiment_cache = get_global_cache(ttl_minutes=60)  # Cache for 1 hour
+        
         # Conversation logger for real-time display
         self.logger = get_conversation_logger()
+    
+    def get_market_sentiment(self, asset: str) -> Dict:
+        """
+        Get current market sentiment for asset
+        
+        Returns cached sentiment or fetches new if expired
+        """
+        # Check cache first
+        cached = self.sentiment_cache.get(asset)
+        if cached:
+            print(f"📦 Using cached sentiment for {asset}")
+            return cached
+        
+        print(f"🗞️  Fetching news sentiment for {asset}...")
+        
+        try:
+            # Fetch news from last hour
+            news = self.news_fetcher.fetch_news(asset, hours=1)
+            
+            if not news:
+                print(f"   No news found for {asset}")
+                return {
+                    'sentiment': 'neutral',
+                    'score': 0.0,
+                    'confidence': 0.0,
+                    'news_count': 0
+                }
+            
+            # Analyze sentiment
+            sentiment = self.sentiment_analyzer.aggregate_sentiment(news)
+            
+            print(f"   Found {sentiment['news_count']} articles: {sentiment['sentiment']} (score: {sentiment['score']:.2f})")
+            
+            # Cache result
+            self.sentiment_cache.set(asset, sentiment)
+            
+            return sentiment
+        
+        except Exception as e:
+            print(f"⚠️  Sentiment fetch error for {asset}: {e}")
+            return {
+                'sentiment': 'neutral',
+                'score': 0.0,
+                'confidence': 0.0,
+                'news_count': 0,
+                'error': str(e)
+            }
         
     def _create_strategy_tools(self) -> List[Dict]:
         """Create OpenAI function tools from trading strategies"""
@@ -262,6 +319,40 @@ class MultiAgentOrchestratorWithTools:
                         "required": ["asset"]
                     }
                 }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "composite_technical_strategy",
+                    "description": "🎯 COMPOSITE Technical Strategy (RECOMMENDED). Fuses MACD, RSI, SMA trends, and volume analysis for high-confidence signals. More reliable than individual indicators.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "asset": {
+                                "type": "string",
+                                "description": "Asset symbol"
+                            }
+                        },
+                        "required": ["asset"]
+                    }
+                }
+            },
+            {
+                "type": "function",
+                "function": {
+                    "name": "sentiment_adjusted_strategy",
+                    "description": "⭐ SENTIMENT-ADJUSTED Strategy (MOST ADVANCED). Combines composite technical analysis with real-time crypto news sentiment. Adjusts signals based on market news (positive/negative). Use this for best risk-adjusted returns.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "asset": {
+                                "type": "string",
+                                "description": "Asset symbol"
+                            }
+                        },
+                        "required": ["asset"]
+                    }
+                }
             }
         ]
         
@@ -276,12 +367,19 @@ class MultiAgentOrchestratorWithTools:
         if function_name == "bandit_select_strategy":
             return await self._execute_bandit_selector(asset, arguments, market_data)
         
+        # 📰 NEW: Add sentiment data to market_data for sentiment-adjusted strategies
+        if 'sentiment' not in market_data:
+            sentiment = self.get_market_sentiment(asset)
+            market_data['sentiment'] = sentiment
+        
         # Map function names to strategy method names
         strategy_map = {
             'buy_and_hold_strategy': 'buy_and_hold',
             'macd_strategy': 'macd_strategy',
             'kdj_rsi_strategy': 'kdj_rsi_strategy',
             'zscore_mean_reversion': 'zscore_mean_reversion',
+            'composite_technical_strategy': 'composite_technical_strategy',  # NEW ✨
+            'sentiment_adjusted_strategy': 'sentiment_adjusted_strategy',    # NEW ✨
             'lgbm_strategy': 'lgbm_strategy',
             'lstm_strategy': 'lstm_strategy',
             'transformer_strategy': 'transformer_strategy',
@@ -449,7 +547,13 @@ class MultiAgentOrchestratorWithTools:
         # Filter out USDC (settlement currency)
         assets = [a for a in assets if a.upper() != 'USDC']
         
-        system_prompt = """You are James Simons, founder of Renaissance Technologies, one of the most successful quantitative hedge funds.
+        # 🌍 Get tier-specific prompt if TierManager is available
+        if self.tier_manager:
+            base_prompt = self.tier_manager.get_prompt_template('trading', self.current_user_tier)
+        else:
+            base_prompt = """You are James Simons, founder of Renaissance Technologies, one of the most successful quantitative hedge funds."""
+        
+        system_prompt = base_prompt + """
 
 Your mission:
 1. FIRST: Use bandit_select_strategy(asset) to get AI-recommended strategies for each asset
@@ -731,7 +835,13 @@ INVALID portfolios (will fail execution):
             "Evaluating portfolio risk metrics: concentration, diversification, strategy balance..."
         )
         
-        system_prompt = """You are a professional Risk Manager at a top-tier hedge fund.
+        # 🌍 Get tier-specific prompt if TierManager is available
+        if self.tier_manager:
+            base_prompt = self.tier_manager.get_prompt_template('risk', self.current_user_tier)
+        else:
+            base_prompt = """You are a professional Risk Manager at a top-tier hedge fund."""
+        
+        system_prompt = base_prompt + """
 
 Your responsibility:
 1. Evaluate portfolio-level risk metrics
@@ -987,7 +1097,7 @@ Return JSON:
         return result
 
 
-def get_multi_agent_orchestrator_with_tools(config: dict, trading_agent, risk_agent, payment_agent):
+def get_multi_agent_orchestrator_with_tools(config: dict, trading_agent, risk_agent, payment_agent, tier_manager=None):
     """Factory function to create orchestrator with function tools"""
-    return MultiAgentOrchestratorWithTools(config, trading_agent, risk_agent, payment_agent)
+    return MultiAgentOrchestratorWithTools(config, trading_agent, risk_agent, payment_agent, tier_manager)
 

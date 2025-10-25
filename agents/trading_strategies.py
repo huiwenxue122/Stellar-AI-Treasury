@@ -601,6 +601,236 @@ class TradingStrategies:
         rsv = ((current - lowest) / (highest - lowest)) * 100
         return rsv  # 简化：直接返回RSV作为K值
     
+    # ============ 🎯 NEW: Enhanced Strategies ============
+    
+    def composite_technical_strategy(self, asset: str, market_data: Dict) -> StrategySignal:
+        """
+        Composite Technical Strategy - Fusion of Multiple Indicators
+        
+        Combines:
+        - MACD (trend direction)
+        - RSI (overbought/oversold)
+        - SMA (long-term trend)
+        - Volume (confirmation)
+        
+        This is MORE RELIABLE than any single indicator.
+        """
+        prices = market_data.get('prices', [])
+        volumes = market_data.get('volumes', [])
+        
+        if len(prices) < 200:
+            return StrategySignal(
+                strategy_name="Composite Technical",
+                asset=asset,
+                action="HOLD",
+                confidence=0.0,
+                strength=0.0,
+                expected_return=0.0,
+                risk_level=0.5,
+                reasoning="Insufficient data for composite analysis (need 200+ candles)"
+            )
+        
+        # 1. Get signals from existing strategies
+        macd_signal = self.macd_strategy(asset, market_data)
+        kdj_rsi_signal = self.kdj_rsi_strategy(asset, market_data)
+        
+        # 2. Calculate SMA trend
+        sma_50 = self._calculate_sma(prices, 50)
+        sma_200 = self._calculate_sma(prices, 200)
+        
+        if sma_50 > sma_200:
+            trend = "bullish"
+            trend_signal = "BUY"
+        elif sma_50 < sma_200:
+            trend = "bearish"
+            trend_signal = "SELL"
+        else:
+            trend = "neutral"
+            trend_signal = "HOLD"
+        
+        # 3. Volume analysis
+        if len(volumes) >= 20:
+            current_volume = volumes[-1]
+            avg_volume = statistics.mean(volumes[-20:])
+            volume_ratio = current_volume / avg_volume if avg_volume > 0 else 1.0
+            volume_strong = volume_ratio > 1.3
+            volume_weak = volume_ratio < 0.7
+        else:
+            volume_strong = False
+            volume_weak = False
+            volume_ratio = 1.0
+        
+        # 4. Fusion logic - voting system
+        signals = {
+            'macd': macd_signal.action,
+            'kdj_rsi': kdj_rsi_signal.action,
+            'trend': trend_signal
+        }
+        
+        buy_score = sum(1 for s in signals.values() if s == 'BUY')
+        sell_score = sum(1 for s in signals.values() if s == 'SELL')
+        
+        # 5. Decision matrix
+        if buy_score >= 2:  # 2+ indicators say BUY
+            # Check if RSI is not overbought
+            rsi = self._calculate_rsi(prices)
+            if rsi > 75:
+                action = "HOLD"
+                confidence = 0.6
+                reasoning = f"2+ BUY signals BUT RSI overbought ({rsi:.1f})"
+            elif volume_strong:
+                action = "BUY"
+                confidence = 0.90
+                reasoning = f"Strong BUY: {buy_score}/3 signals + volume confirmation (ratio: {volume_ratio:.2f}x)"
+            else:
+                action = "BUY"
+                confidence = 0.75
+                reasoning = f"Moderate BUY: {buy_score}/3 signals (weak volume)"
+        
+        elif sell_score >= 2:  # 2+ indicators say SELL
+            action = "SELL"
+            confidence = 0.85
+            reasoning = f"Strong SELL: {sell_score}/3 signals (MACD:{signals['macd']}, RSI:{signals['kdj_rsi']}, Trend:{trend})"
+        
+        elif buy_score == 1 and sell_score == 0 and volume_strong:
+            # Weak buy but strong volume
+            action = "BUY"
+            confidence = 0.65
+            reasoning = f"Weak BUY signal but strong volume support (ratio: {volume_ratio:.2f}x)"
+        
+        else:
+            action = "HOLD"
+            confidence = 0.5
+            reasoning = f"Mixed signals: BUY={buy_score}, SELL={sell_score}, Trend={trend}"
+        
+        # 6. Calculate composite strength
+        strength = (macd_signal.strength + kdj_rsi_signal.strength) / 2
+        if volume_strong:
+            strength *= 1.2  # Boost with volume
+        strength = min(strength, 1.0)
+        
+        return StrategySignal(
+            strategy_name="Composite Technical",
+            asset=asset,
+            action=action,
+            confidence=confidence,
+            strength=strength,
+            expected_return=0.10 * strength if action == "BUY" else 0.0,
+            risk_level=0.4,
+            reasoning=reasoning
+        )
+    
+    def sentiment_adjusted_strategy(self, asset: str, market_data: Dict) -> StrategySignal:
+        """
+        Sentiment-Adjusted Strategy
+        
+        Takes composite technical signal and adjusts based on news sentiment:
+        - Positive news → Increase confidence
+        - Negative news → Reduce confidence or reverse signal
+        - Neutral → No change
+        
+        This is what INSTITUTIONAL TRADERS do!
+        """
+        # 1. Get technical signal (from composite strategy)
+        tech_signal = self.composite_technical_strategy(asset, market_data)
+        
+        # 2. Get news sentiment (from market_data)
+        sentiment = market_data.get('sentiment', {})
+        
+        if not sentiment:
+            # No sentiment data, return technical signal as-is
+            return StrategySignal(
+                strategy_name="Sentiment-Adjusted",
+                asset=tech_signal.asset,
+                action=tech_signal.action,
+                confidence=tech_signal.confidence,
+                strength=tech_signal.strength,
+                expected_return=tech_signal.expected_return,
+                risk_level=tech_signal.risk_level,
+                reasoning=f"{tech_signal.reasoning} (no sentiment data)"
+            )
+        
+        sentiment_type = sentiment.get('sentiment', 'neutral')
+        sentiment_score = sentiment.get('score', 0.0)  # -1 to 1
+        news_count = sentiment.get('news_count', 0)
+        
+        # 3. Sentiment adjustment logic
+        action = tech_signal.action
+        confidence = tech_signal.confidence
+        reasoning = tech_signal.reasoning
+        
+        if sentiment_type == 'negative' and tech_signal.action == 'BUY':
+            # Technical says BUY, but news is negative
+            if sentiment_score < -0.5 and news_count > 3:
+                # STRONG negative news → Don't buy!
+                action = "HOLD"
+                confidence = 0.5
+                reasoning = f"{tech_signal.reasoning} BUT strong negative news ({news_count} articles, score {sentiment_score:.2f}) → HOLD instead"
+            else:
+                # Mild negative → Reduce confidence
+                action = "BUY"
+                confidence = tech_signal.confidence * 0.7
+                reasoning = f"{tech_signal.reasoning} with CAUTION (negative sentiment: {sentiment_score:.2f})"
+        
+        elif sentiment_type == 'positive' and tech_signal.action == 'BUY':
+            # Technical + News both bullish → HIGH CONFIDENCE
+            action = "BUY"
+            confidence = min(tech_signal.confidence * 1.25, 0.95)
+            reasoning = f"{tech_signal.reasoning} + POSITIVE news boost! (score: {sentiment_score:.2f}, {news_count} articles)"
+        
+        elif sentiment_type == 'negative' and tech_signal.action == 'SELL':
+            # Technical + News both bearish → STRONG SELL
+            action = "SELL"
+            confidence = min(tech_signal.confidence * 1.3, 0.95)
+            reasoning = f"{tech_signal.reasoning} + negative news confirmation (score: {sentiment_score:.2f})"
+        
+        elif sentiment_type == 'positive' and tech_signal.action == 'SELL':
+            # Technical says SELL, but news is positive → Conflict
+            if sentiment_score > 0.5 and news_count > 3:
+                # STRONG positive news → Maybe don't sell
+                action = "HOLD"
+                confidence = 0.55
+                reasoning = f"{tech_signal.reasoning} BUT strong positive news → HOLD for now"
+            else:
+                action = "SELL"
+                confidence = tech_signal.confidence * 0.8
+                reasoning = f"{tech_signal.reasoning} (mildly positive news: {sentiment_score:.2f})"
+        
+        else:
+            # Neutral sentiment or HOLD → Keep technical signal
+            if sentiment_type != 'neutral':
+                reasoning = f"{tech_signal.reasoning} (sentiment: {sentiment_type})"
+        
+        # 4. Adjust expected return based on sentiment
+        expected_return = tech_signal.expected_return
+        if action == "BUY":
+            expected_return *= (1 + sentiment_score * 0.3)  # Sentiment can boost/reduce expected return
+        
+        # 5. Adjust risk level
+        risk_level = tech_signal.risk_level
+        if abs(sentiment_score) > 0.7:
+            # Extreme sentiment (positive or negative) increases risk
+            risk_level *= 1.2
+        risk_level = min(risk_level, 1.0)
+        
+        return StrategySignal(
+            strategy_name="Sentiment-Adjusted",
+            asset=asset,
+            action=action,
+            confidence=confidence,
+            strength=tech_signal.strength,
+            expected_return=expected_return,
+            risk_level=risk_level,
+            reasoning=reasoning
+        )
+    
+    def _calculate_sma(self, prices: List[float], period: int) -> float:
+        """Calculate Simple Moving Average"""
+        if len(prices) < period:
+            return prices[-1] if prices else 0
+        
+        return statistics.mean(prices[-period:])
+    
     def get_all_strategies(self) -> List[str]:
         """获取所有策略名称"""
         return [
@@ -608,6 +838,8 @@ class TradingStrategies:
             "macd_strategy",
             "kdj_rsi_strategy",
             "zscore_mean_reversion",
+            "composite_technical_strategy",  # NEW ✨
+            "sentiment_adjusted_strategy",    # NEW ✨
             "lgbm_strategy",
             "lstm_strategy",
             "transformer_strategy",

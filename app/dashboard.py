@@ -21,6 +21,7 @@ import time
 from datetime import datetime, timedelta
 from app.orchestrator import ORCHESTRATOR
 from app.agent_conversation_ui import render_agent_conversation, render_compact_agent_status
+from app.localization import get_translation, get_tier_description, get_risk_explanation
 
 # Page configuration
 st.set_page_config(
@@ -110,12 +111,18 @@ class TreasuryDashboard:
         if 'hedge_currency' not in st.session_state:
             st.session_state.hedge_currency = 'USDC'
         if 'xlm_balance' not in st.session_state:
-            # 💰 Initialize with $1M worth of XLM for display purposes
+            # 💰 Initialize with default - will be updated when user configures capital
             FIXED_XLM_PRICE = 0.31
-            TARGET_USD = 1_000_000
-            st.session_state.xlm_balance = TARGET_USD / FIXED_XLM_PRICE  # 3,225,806.45 XLM
+            DEFAULT_USD = 1_000_000  # Default, will be replaced by user's capital choice
+            st.session_state.xlm_balance = DEFAULT_USD / FIXED_XLM_PRICE  # Updated on config confirm
         if 'config_completed' not in st.session_state:
             st.session_state.config_completed = False
+        
+        # 🌍 Tier system and localization
+        if 'user_tier' not in st.session_state:
+            st.session_state.user_tier = 'beginner'
+        if 'language' not in st.session_state:
+            st.session_state.language = 'en'
         if 'latest_risk_metrics' not in st.session_state:
             st.session_state.latest_risk_metrics = None
     
@@ -153,6 +160,56 @@ class TreasuryDashboard:
         Please configure your portfolio before starting:
         """)
         
+        # 🌍 Tier Selection Section
+        st.markdown("---")
+        st.subheader("🎓 " + get_translation('select_tier', st.session_state.language))
+        
+        tier_col1, tier_col2 = st.columns([2, 1])
+        
+        with tier_col1:
+            tier_options = {
+                'beginner': get_translation('tier_beginner', st.session_state.language),
+                'intermediate': get_translation('tier_intermediate', st.session_state.language),
+                'advanced': get_translation('tier_advanced', st.session_state.language)
+            }
+            
+            selected_tier = st.radio(
+                "Your Experience Level:",
+                options=list(tier_options.keys()),
+                format_func=lambda x: tier_options[x],
+                index=['beginner', 'intermediate', 'advanced'].index(st.session_state.user_tier)
+            )
+            
+            st.session_state.user_tier = selected_tier
+            
+            # Show tier description
+            st.markdown(get_tier_description(selected_tier, st.session_state.language))
+        
+        with tier_col2:
+            # Language selection
+            st.selectbox(
+                "🌍 Language:",
+                options=['en', 'es', 'sw', 'ar', 'zh'],
+                format_func=lambda x: {
+                    'en': '🇬🇧 English',
+                    'es': '🇪🇸 Español',
+                    'sw': '🇹🇿 Kiswahili',
+                    'ar': '🇸🇦 العربية',
+                    'zh': '🇨🇳 中文'
+                }[x],
+                key='language'
+            )
+            
+            # Show risk budget info
+            tier_config = self.orchestrator.tier_manager.get_tier_config(selected_tier)
+            st.info(f"""
+            **Risk Budget:**
+            - Max Portfolio Risk: {tier_config.max_portfolio_var * 100}%
+            - Max Single Asset: {tier_config.max_single_asset_percent}%
+            """)
+        
+        st.markdown("---")
+        
         col1, col2 = st.columns(2)
         
         with col1:
@@ -165,31 +222,36 @@ class TreasuryDashboard:
             System will use XLM for multi-asset trading
             """)
             
-            # Optional: Display actual XLM balance
-            if st.button("🔍 Query XLM Balance"):
-                with st.spinner("Querying..."):
-                    try:
-                        # Get wallet public key from orchestrator
-                        from stellar.wallet import Wallet
-                        from dotenv import load_dotenv
-                        load_dotenv()
-                        wallet_public = os.environ.get("STELLAR_PUBLIC")
-                        
-                        if not wallet_public:
-                            st.error("❌ STELLAR_PUBLIC not found in environment")
-                            st.session_state.xlm_balance = 0.0
-                        else:
-                            xlm_balance = asyncio.run(
-                                self.orchestrator.asset_manager.get_asset_balance(wallet_public, 'xlm')
-                            )
-                            st.session_state.xlm_balance = xlm_balance
-                            st.success(f"✅ XLM Balance: {xlm_balance:.2f}")
-                    except Exception as e:
-                        st.warning(f"Query failed: {e}")
-                        st.session_state.xlm_balance = 0.0
-            
+            # Display the configured capital (updated in real-time as user selects)
             if st.session_state.xlm_balance > 0:
-                st.metric("Current XLM Balance", f"{st.session_state.xlm_balance:.2f} XLM")
+                capital_usd = st.session_state.xlm_balance * 0.31
+                st.metric(
+                    "Configured Capital", 
+                    f"{st.session_state.xlm_balance:.2f} XLM",
+                    delta=f"≈ ${capital_usd:,.2f} USD"
+                )
+                st.caption("💡 This will update as you select your capital below")
+            
+            # Optional: Display actual testnet XLM balance
+            with st.expander("🔍 Query Real Testnet Balance (Optional)"):
+                if st.button("Query Testnet Balance"):
+                    with st.spinner("Querying Stellar testnet..."):
+                        try:
+                            from stellar.wallet import Wallet
+                            from dotenv import load_dotenv
+                            load_dotenv()
+                            wallet_public = os.environ.get("STELLAR_PUBLIC")
+                            
+                            if not wallet_public:
+                                st.error("❌ STELLAR_PUBLIC not found in environment")
+                            else:
+                                real_xlm_balance = asyncio.run(
+                                    self.orchestrator.asset_manager.get_asset_balance(wallet_public, 'xlm')
+                                )
+                                st.success(f"✅ Real Testnet Balance: {real_xlm_balance:.2f} XLM")
+                                st.caption("Note: This is your actual testnet balance. We use simulated balance for trading.")
+                        except Exception as e:
+                            st.warning(f"Query failed: {e}")
         
         with col2:
             st.subheader("🎯 Hedge Currency")
@@ -213,48 +275,244 @@ class TreasuryDashboard:
         
         st.markdown("---")
         
+        # 💰 NEW: Initial Capital Configuration
+        st.subheader("💰 Initial Capital Configuration")
+        
+        # Tier-based recommendations
+        tier = st.session_state.user_tier
+        tier_recommendations = {
+            'beginner': {
+                'min': 100.0,
+                'recommended': 1000.0,
+                'max': 10000.0,
+                'message': "🎓 For beginners: Start small to learn. We recommend $500-$5,000 to safely explore strategies."
+            },
+            'intermediate': {
+                'min': 1000.0,
+                'recommended': 25000.0,
+                'max': 100000.0,
+                'message': "📊 For intermediate users: Moderate capital allows better diversification. Recommended: $10K-$50K."
+            },
+            'advanced': {
+                'min': 10000.0,
+                'recommended': 250000.0,
+                'max': 10000000.0,
+                'message': "🚀 For advanced users: Large capital enables full strategy deployment. Recommended: $100K+."
+            }
+        }
+        
+        rec = tier_recommendations[tier]
+        
+        # Display tier-specific guidance
+        st.info(rec['message'])
+        
+        # Quick preset buttons
+        st.markdown("**Quick Presets:**")
+        col1, col2, col3, col4 = st.columns(4)
+        
+        # Define presets (use float for consistency with number_input)
+        presets = [
+            ("$1K", 1000.0),
+            ("$10K", 10000.0),
+            ("$100K", 100000.0),
+            ("$1M", 1000000.0)
+        ]
+        
+        # Display preset buttons
+        for col, (label, amount) in zip([col1, col2, col3, col4], presets):
+            with col:
+                # Check if amount is within tier limits
+                is_disabled = amount < rec['min'] or amount > rec['max']
+                button_label = f"{label} {'🔒' if is_disabled else ''}"
+                
+                if st.button(button_label, key=f"preset_{amount}", disabled=is_disabled):
+                    st.session_state.temp_capital = amount
+                    st.rerun()
+        
+        # Show help for locked presets
+        locked_presets = [label for label, amount in presets if amount < rec['min'] or amount > rec['max']]
+        if locked_presets:
+            st.caption(f"🔒 Locked presets are outside your tier's limits. Upgrade tier to unlock.")
+        
+        # Custom input with validation
+        default_capital = st.session_state.get('temp_capital', rec['recommended'])
+        
+        # 🔧 FIX: Ensure default_capital is float (streamlit requires consistent types)
+        default_capital = float(default_capital)
+        
+        # Ensure default is within tier limits
+        if default_capital < rec['min']:
+            default_capital = rec['min']
+        elif default_capital > rec['max']:
+            default_capital = rec['max']
+        
+        capital_usd = st.number_input(
+            f"Enter your capital (${rec['min']:,.0f} - ${rec['max']:,.0f} USD):",
+            min_value=rec['min'],
+            max_value=rec['max'],
+            value=default_capital,
+            step=1000.0,
+            key='capital_input',
+            help=f"This amount will be converted to XLM for simulated trading on Stellar testnet."
+        )
+        
+        # Save to session state
+        st.session_state.initial_capital_usd = capital_usd
+        
+        # Real-time conversion (using FIXED price $0.31)
+        FIXED_XLM_PRICE = 0.31
+        xlm_amount = capital_usd / FIXED_XLM_PRICE
+        
+        # 💰 IMPORTANT: Also update xlm_balance immediately for display purposes
+        # This ensures the "Initial Asset" and "Configuration Summary" sections show the correct amount
+        st.session_state.xlm_balance = xlm_amount
+        
+        st.markdown("---")
+        st.markdown("### 💱 Conversion Preview")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("💵 USD Capital", f"${capital_usd:,.0f}")
+        with col2:
+            st.metric("💎 XLM Equivalent", f"{xlm_amount:,.0f} XLM")
+        with col3:
+            st.metric("📊 XLM Price (Fixed)", f"${FIXED_XLM_PRICE}")
+        
+        st.caption("🔒 This is **simulated capital** for testing strategies. No real funds required on Stellar testnet.")
+        
+        # Warning for mismatched tier/capital
+        if tier == 'beginner' and capital_usd > 10000:
+            st.warning("⚠️  You selected Beginner tier but large capital. Consider Intermediate tier for better risk management.")
+        elif tier == 'advanced' and capital_usd < 10000:
+            st.info("💡 Advanced tier with small capital? Most advanced strategies work better with larger amounts.")
+        
+        st.markdown("---")
+        
         st.subheader("📊 Trading Assets Selection")
         
         st.markdown("""
-        Select assets you want to trade. System will:
-        - Run 10 trading strategies
-        - Build optimal portfolio
-        - Manage risk with hedge currency
+        Select assets you want to trade. **Assets are grouped by risk level** based on your experience tier.
+        - ✅ = Safe for beginners  |  ⚖️ = Moderate risk  |  🚀 = High risk
         """)
         
-        # Available assets list
-        available_assets = {
-            'Cryptocurrencies': ['BTC', 'ETH', 'SOL', 'ARB', 'LINK', 'AAVE', 'LDO', 'FET', 'XLM'],
-            'Stablecoins': ['USDC', 'USDT'],
-            'RWA': ['BOND', 'GOLD', 'REIT']
-        }
+        # 🎯 Get assets grouped by risk level for current tier
+        assets_by_risk = self.orchestrator.tier_manager.get_assets_by_risk_level(st.session_state.user_tier)
         
         selected_assets = []
         
-        col1, col2, col3 = st.columns(3)
+        # 🛡️ SAFE ASSETS (Always shown if tier allows)
+        if assets_by_risk['safe']:
+            st.markdown("### 🛡️ Safe Assets (Recommended)")
+            st.caption("Low risk, stable value. Good for capital preservation.")
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                st.markdown("**💵 Stablecoins**")
+                for asset in ['USDC', 'USDT']:
+                    if asset in assets_by_risk['safe'] and asset != st.session_state.hedge_currency:
+                        default = asset in st.session_state.selected_assets
+                        if st.checkbox(f"{asset} ✅", value=default, key=f"asset_{asset}"):
+                            selected_assets.append(asset)
+                            # Show safety explanation
+                            if st.session_state.user_tier == 'beginner':
+                                safety_msg = self.orchestrator.tier_manager.get_safety_explanation(
+                                    asset, st.session_state.user_tier, st.session_state.language
+                                )
+                                if safety_msg:
+                                    st.caption(safety_msg[:100] + "...")
+            
+            with col2:
+                st.markdown("**🏆 Gold-Backed**")
+                for asset in ['PAXG', 'XAUT', 'GOLD']:
+                    if asset in assets_by_risk['safe']:
+                        default = asset in st.session_state.selected_assets
+                        if st.checkbox(f"{asset} ✅", value=default, key=f"asset_{asset}"):
+                            selected_assets.append(asset)
+                            # Show safety explanation
+                            if st.session_state.user_tier == 'beginner':
+                                safety_msg = self.orchestrator.tier_manager.get_safety_explanation(
+                                    asset, st.session_state.user_tier, st.session_state.language
+                                )
+                                if safety_msg:
+                                    st.caption(safety_msg[:100] + "...")
+            
+            with col3:
+                st.markdown("**📜 Tokenized Funds & Real Estate**")
+                for asset in ['BENJI', 'REIT']:
+                    if asset in assets_by_risk['safe']:
+                        default = asset in st.session_state.selected_assets
+                        if st.checkbox(f"{asset} ✅", value=default, key=f"asset_{asset}"):
+                            selected_assets.append(asset)
+                            # Show safety explanation
+                            if st.session_state.user_tier == 'beginner':
+                                safety_msg = self.orchestrator.tier_manager.get_safety_explanation(
+                                    asset, st.session_state.user_tier, st.session_state.language
+                                )
+                                if safety_msg:
+                                    st.caption(safety_msg[:100] + "...")
+            
+            st.markdown("---")
         
-        with col1:
-            st.markdown("**🪙 Cryptocurrencies**")
-            for asset in available_assets['Cryptocurrencies']:
-                if asset != 'XLM':  # XLM is initial asset, no need to select
+        # ⚖️ MODERATE RISK ASSETS (Intermediate+)
+        if assets_by_risk['moderate']:
+            st.markdown("### ⚖️ Moderate Risk Assets")
+            st.caption("Higher potential returns, but with volatility. Requires some experience.")
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**🪙 Major Cryptocurrencies**")
+                for asset in ['BTC', 'ETH']:
+                    if asset in assets_by_risk['moderate']:
+                        default = asset in st.session_state.selected_assets
+                        if st.checkbox(f"{asset} ⚖️", value=default, key=f"asset_{asset}"):
+                            selected_assets.append(asset)
+                            # Show warning
+                            if st.session_state.user_tier in ['beginner', 'intermediate']:
+                                safety_msg = self.orchestrator.tier_manager.get_safety_explanation(
+                                    asset, 'beginner', st.session_state.language
+                                )
+                                if safety_msg:
+                                    st.caption(safety_msg[:100] + "...")
+            
+            with col2:
+                st.markdown("**🔗 DeFi & Layer 1/2**")
+                for asset in ['SOL', 'ARB', 'LINK', 'AAVE']:
+                    if asset in assets_by_risk['moderate']:
+                        default = asset in st.session_state.selected_assets
+                        if st.checkbox(f"{asset} ⚖️", value=default, key=f"asset_{asset}"):
+                            selected_assets.append(asset)
+            
+            st.markdown("---")
+        
+        elif st.session_state.user_tier == 'beginner':
+            # Show locked message for beginners
+            st.markdown("### ⚖️ Moderate Risk Assets 🔒")
+            st.info("🔒 **Upgrade to Intermediate** to access BTC, ETH, SOL, LINK, AAVE and more.")
+            st.markdown("---")
+        
+        # 🚀 HIGH RISK ASSETS (Advanced only)
+        if assets_by_risk['high_risk']:
+            st.markdown("### 🚀 High Risk Assets")
+            st.caption("Small-cap crypto with high volatility. For experienced traders only.")
+            
+            st.markdown("**💫 Small Cap & Emerging**")
+            for asset in ['LDO', 'FET', 'XLM']:
+                if asset in assets_by_risk['high_risk']:
                     default = asset in st.session_state.selected_assets
-                    if st.checkbox(asset, value=default, key=f"asset_{asset}"):
+                    # XLM special handling (it's the native currency)
+                    label = f"{asset} 🚀" if asset != 'XLM' else f"{asset} ⭐ (Native)"
+                    if st.checkbox(label, value=default, key=f"asset_{asset}"):
                         selected_assets.append(asset)
+            
+            st.markdown("---")
         
-        with col2:
-            st.markdown("**💵 Stablecoins**")
-            for asset in available_assets['Stablecoins']:
-                if asset != st.session_state.hedge_currency:  # Hedge currency auto-included
-                    default = asset in st.session_state.selected_assets
-                    if st.checkbox(asset, value=default, key=f"asset_{asset}"):
-                        selected_assets.append(asset)
-        
-        with col3:
-            st.markdown("**🏦 RWA (Real World Assets)**")
-            for asset in available_assets['RWA']:
-                default = asset in st.session_state.selected_assets
-                if st.checkbox(asset, value=default, key=f"asset_{asset}"):
-                    selected_assets.append(asset)
+        elif st.session_state.user_tier in ['beginner', 'intermediate']:
+            # Show locked message
+            st.markdown("### 🚀 High Risk Assets 🔒")
+            st.info("🔒 **Upgrade to Advanced** to access small-cap cryptocurrencies like LDO, FET.")
+            st.markdown("---")
         
         # Add hedge currency to selection list
         if st.session_state.hedge_currency not in selected_assets:
@@ -295,8 +553,22 @@ class TreasuryDashboard:
             if st.button("✅ Confirm Configuration and Start", type="primary", disabled=len(selected_assets) == 0):
                 st.session_state.selected_assets = selected_assets
                 st.session_state.config_completed = True
-                self.add_to_log(f"Configuration completed: {len(selected_assets)}assets, Hedge Currency: {st.session_state.hedge_currency}", "success")
-                st.success("✅ Configuration completed！System will initialize soon...")
+                
+                # Set user tier in orchestrator
+                self.orchestrator.set_user_tier(st.session_state.user_tier)
+                
+                # 💰 Set initial capital (NEW)
+                capital_usd = st.session_state.get('initial_capital_usd', 1000000.0)
+                xlm_amount = self.orchestrator.set_initial_capital(capital_usd)
+                
+                # 💰 UPDATE: Also update xlm_balance in session_state for display
+                st.session_state.xlm_balance = xlm_amount
+                
+                self.add_to_log(
+                    f"Configuration completed: Tier={st.session_state.user_tier}, Capital=${capital_usd:,.0f} ({xlm_amount:,.0f} XLM), Assets={len(selected_assets)}, Hedge={st.session_state.hedge_currency}, Language={st.session_state.language}", 
+                    "success"
+                )
+                st.success(f"✅ Configuration completed! Initial capital: ${capital_usd:,.0f} (≈ {xlm_amount:,.0f} XLM)")
                 st.rerun()
         
         # Show instructions
@@ -328,7 +600,7 @@ class TreasuryDashboard:
             ### Recommended Configurations
             
             **Conservative**:
-            - Assets: BTC, ETH, USDC, BOND
+            - Assets: BTC, ETH, USDC, BENJI
             - Hedge: USDC
             
             **Balanced**:

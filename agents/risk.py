@@ -38,6 +38,63 @@ class RiskAgent:
         # 历史数据提供器（用于获取真实市场数据）
         from stellar.historical_data import HistoricalDataProvider
         self.historical_data = HistoricalDataProvider(cfg)
+    
+    def calculate_sentiment_adjusted_position_size(self, asset: str, base_position: float, sentiment: Dict) -> float:
+        """
+        🎯 NEW: Calculate position size adjusted for news sentiment
+        
+        Args:
+            asset: Asset symbol
+            base_position: Base position size (0.0 to 1.0)
+            sentiment: Sentiment data with 'sentiment', 'score', 'news_count'
+        
+        Returns:
+            Adjusted position size (0.0 to 1.0)
+        """
+        if not sentiment or sentiment.get('news_count', 0) == 0:
+            # No sentiment data, return base position
+            return base_position
+        
+        sentiment_type = sentiment.get('sentiment', 'neutral')
+        sentiment_score = sentiment.get('score', 0.0)  # -1 to 1
+        news_count = sentiment.get('news_count', 0)
+        
+        # Calculate sentiment adjustment factor
+        if sentiment_type == 'negative':
+            # Negative news → Reduce position
+            if sentiment_score < -0.5 and news_count > 3:
+                # STRONG negative → Reduce by 50-70%
+                adjustment = 0.3 + (1 + sentiment_score) * 0.2  # 0.3 to 0.4
+            else:
+                # Mild negative → Reduce by 20-40%
+                adjustment = 0.6 + (1 + sentiment_score) * 0.2  # 0.6 to 0.8
+        
+        elif sentiment_type == 'positive':
+            # Positive news → Can slightly increase (but cautiously)
+            if sentiment_score > 0.5 and news_count > 3:
+                # STRONG positive → Increase by 10-20%
+                adjustment = 1.0 + sentiment_score * 0.2  # 1.1 to 1.2
+            else:
+                # Mild positive → Increase by 5-10%
+                adjustment = 1.0 + sentiment_score * 0.1  # 1.0 to 1.1
+        
+        else:
+            # Neutral → No adjustment
+            adjustment = 1.0
+        
+        # Apply adjustment
+        adjusted_position = base_position * adjustment
+        
+        # Ensure within bounds [0, 1]
+        adjusted_position = max(0.0, min(adjusted_position, 1.0))
+        
+        print(f"📊 Position sizing for {asset}:")
+        print(f"   Base: {base_position:.1%}")
+        print(f"   Sentiment: {sentiment_type} (score: {sentiment_score:.2f}, {news_count} articles)")
+        print(f"   Adjustment: ×{adjustment:.2f}")
+        print(f"   Final: {adjusted_position:.1%}")
+        
+        return adjusted_position
 
     def pool_score(self, depth_usd: float, impact_bps: float, vol_z: float) -> float:
         # simple weighted score 0..1
