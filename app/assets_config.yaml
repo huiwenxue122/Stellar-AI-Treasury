@@ -1,0 +1,123 @@
+# 扩展的资产配置 - 支持多种资产类型
+
+# Stablecoins - 用于计价、支付和风险计算
+stablecoins:
+  usdc:
+    code: USDC
+    issuer: "GBBD47IF6I2X6ZJMPRC7JIBMQJSQADPDA3BZX4A5QW4NRS6R6ZQBTNAE"
+    name: "USD Coin"
+    type: stablecoin
+    decimals: 7
+    is_base_currency: true
+  
+  usdt:
+    code: USDT
+    issuer: "GCQTGZQQ5G4PTM2GL7CDIFKUBIPEC52BROAQIAPW53XBRJVN6ZJVTG6V"
+    name: "Tether USD"
+    type: stablecoin
+    decimals: 7
+
+# Cryptocurrencies - 主要加密货币
+cryptocurrencies:
+  xlm:
+    code: XLM
+    issuer: null  # Native asset
+    name: "Stellar Lumens"
+    type: native
+    decimals: 7
+    
+  btc:
+    code: BTC
+    issuer: "GAUTUYY2THLF7SGITDFMXJVYH3LHDSMGEAKSBU267M2K7A3W543CKUEF"
+    name: "Bitcoin (Stellar)"
+    type: crypto
+    decimals: 7
+    
+  eth:
+    code: ETH
+    issuer: "GBDEVU63Y6NTHJQQZIKVTC23NWLQVP3WJ2RI2OTSJTNYOIGICST6DUXR"
+    name: "Ethereum (Stellar)"
+    type: crypto
+    decimals: 7
+
+# RWA (Real World Assets) - 真实世界资产
+rwa:
+  usdbond:
+    code: BOND
+    issuer: "GDSTRSHXHGJ7ZIVRBXEYE5Q74XUVCUSEKEBR7UCHEUUEK72N7I7KJ6JH"
+    name: "US Treasury Bond Token"
+    type: rwa_bond
+    decimals: 7
+    underlying: "US Treasury"
+    maturity: "2025-12-31"
+    
+  gold:
+    code: GOLD
+    issuer: "GDUKMGUGDZQK6YHVD4PBRXWXLD6THNCJENQLDNDB3KPO5RZYBWE4XK2P"
+    name: "Gold Token"
+    type: rwa_commodity
+    decimals: 7
+    underlying: "Physical Gold"
+    
+  reit:
+    code: REIT
+    issuer: "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+    name: "Real Estate Investment Trust"
+    type: rwa_real_estate
+    decimals: 7
+    underlying: "Commercial Real Estate"
+
+# 资产分类
+asset_categories:
+  safe_haven:
+    - usdc
+    - usdt
+    - gold
+    - usdbond
+  
+  growth:
+    - btc
+    - eth
+    - xlm
+  
+  income:
+    - usdbond
+    - reit
+  
+  volatile:
+    - btc
+    - eth
+
+# 交易配置
+trading_config:
+  base_currency: usdc  # 所有交易以USDC计价
+  settlement_currency: usdc  # 所有利润转换为USDC
+  
+  # 资产权重限制
+  max_single_asset_weight: 0.30  # 单个资产最大30%
+  min_stable_allocation: 0.20     # 至少保持20% stablecoin
+  
+  # 风险限制
+  max_volatility: 0.50           # 最大波动率50%
+  max_drawdown: 0.25             # 最大回撤25%
+  
+  # 交易限制
+  max_trade_size_usd: 1000
+  min_trade_size_usd: 10
+
+# 风险参数
+risk_parameters:
+  # VaR计算
+  var_confidence_level: 0.95     # 95% 置信水平
+  var_time_horizon_days: 1       # 1日VaR
+  
+  # CVaR (条件VaR)
+  cvar_confidence_level: 0.95
+  
+  # 性能指标
+  sharpe_risk_free_rate: 0.04    # 4% 无风险利率
+  target_sharpe_ratio: 1.5       # 目标夏普比率
+  
+  # 回撤控制
+  max_acceptable_drawdown: 0.20  # 最大可接受回撤20%
+  drawdown_recovery_factor: 0.5  # 回撤恢复因子

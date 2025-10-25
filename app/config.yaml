@@ -1,0 +1,416 @@
+network:
+  horizon: https://horizon-testnet.stellar.org
+  passphrase: "Test SDF Network ; September 2015"
+  use_testnet: true
+
+# Multi-Agent System配置
+agent_system:
+  enabled: true
+  model: "gpt-4-turbo-preview"  # 支持JSON mode (或用 "gpt-3.5-turbo")
+  
+  # Trading Agent配置
+  trading_agent:
+    personality: "James Simons"  # 量化研究员
+    temperature: 0.7
+    max_signals: 3
+    
+  # Risk Agent配置
+  risk_agent:
+    personality: "Risk Manager"
+    temperature: 0.3  # 保守
+    max_risk_score: 0.7  # 最大可接受风险
+    
+  # Payment Agent配置
+  payment_agent:
+    personality: "Execution Specialist"
+    temperature: 0.2  # 精确执行
+    always_settle_to_usdc: true
+
+wallet:
+  secret_key_env: STELLAR_SECRET
+  public_key_env: STELLAR_PUBLIC
+
+# Stellar Smart Contract配置
+smart_contract:
+  enabled: true  # 启用智能合约集成
+  contract_id: "CCK3NFUGKRJIE242FXHE2HHPI6AB2HQS6DUDYCWQIVUBSWCBGGGAQ6UJ"
+  network: "testnet"
+  enforce_on_chain: true  # 所有交易必须通过智能合约验证
+  
+  # Agent配置（暂时都使用同一个账户）
+  trading_agent_secret_env: "STELLAR_SECRET"
+  risk_agent_secret_env: "STELLAR_SECRET"
+  payment_agent_secret_env: "STELLAR_SECRET"
+
+# 市场数据配置
+market_data:
+  use_live_data: true  # 使用真实在线数据
+  
+  # 数据源优先级
+  crypto_sources:
+    - stellar_dex    # 优先使用Stellar DEX
+    - coingecko      # 备选：CoinGecko API
+  
+  rwa_sources:
+    - yahoo_finance  # Yahoo Finance API
+  
+  # 缓存设置
+  cache_ttl_seconds: 60
+  
+  # API配置（都是免费的，无需key）
+  coingecko_api: "https://api.coingecko.com/api/v3"
+  yahoo_finance_api: "https://query1.finance.yahoo.com/v8/finance"
+
+assets:
+  # Stablecoins - 用于计价和结算
+  usdc:
+    code: USDC
+    issuer: "GBBD47IF6I2X6ZJMPRC7JIBMQJSQADPDA3BZX4A5QW4NRS6R6ZQBTNAE"
+    type: stablecoin
+    category: safe_haven
+    is_base_currency: true
+  
+  usdt:
+    code: USDT
+    issuer: "GCQTGZQQ5G4PTM2GL7CDIFKUBIPEC52BROAQIAPW53XBRJVN6ZJVTG6V"
+    type: stablecoin
+    category: safe_haven
+  
+  # Cryptocurrencies - 加密货币
+  xlm:
+    code: XLM
+    issuer: null
+    type: native
+    category: growth
+    coingecko_id: "stellar"
+    
+  btc:
+    code: BTC
+    issuer: "GAUTUYY2THLF7SGITDFMXJVYH3LHDSMGEAKSBU267M2K7A3W543CKUEF"
+    type: crypto
+    category: growth
+    risk_level: 0.9
+    coingecko_id: "bitcoin"
+    
+  eth:
+    code: ETH
+    issuer: "GBDEVU63Y6NTHJQQZIKVTC23NWLQVP3WJ2RI2OTSJTNYOIGICST6DUXR"
+    type: crypto
+    category: growth
+    risk_level: 0.85
+    coingecko_id: "ethereum"
+  
+  sol:
+    code: SOL
+    issuer: "GATEMHCCKCY67ZUCKTROYN24ZYT5GK4EQZ65JJLDHKHRUZI3EUEKMTCH"
+    type: crypto
+    category: volatile
+    risk_level: 0.95
+    coingecko_id: "solana"
+  
+  arb:
+    code: ARB
+    issuer: "GDHU6WRG4IEQXM5NZ4BMPKOXHW76MZM4Y2IEMFDVXBSDP6SJY4ITNPP2"
+    type: crypto
+    category: growth
+    risk_level: 0.75
+    coingecko_id: "arbitrum"
+  
+  link:
+    code: LINK
+    issuer: "GCJDZ7FXQXQXQXQXQXQXQXQXQXQXQXQXQXQXQXQXQXQXQXQXQXQXQXQX"
+    type: crypto
+    category: growth
+    risk_level: 0.7
+    coingecko_id: "chainlink"
+  
+  aave:
+    code: AAVE
+    issuer: "GAAVEAAVEAAVEAAVEAAVEAAVEAAVEAAVEAAVEAAVEAAVEAAVEAAVEAAVE"
+    type: crypto
+    category: growth
+    risk_level: 0.75
+    coingecko_id: "aave"
+  
+  ldo:
+    code: LDO
+    issuer: "GLDOLDOLDOLDOLDOLDOLDOLDOLDOLDOLDOLDOLDOLDOLDOLDOLDOLDOLDO"
+    type: crypto
+    category: growth
+    risk_level: 0.8
+    coingecko_id: "lido-dao"
+  
+  fet:
+    code: FET
+    issuer: "GFETFETFETFETFETFETFETFETFETFETFETFETFETFETFETFETFETFETFET"
+    type: crypto
+    category: volatile
+    risk_level: 0.9
+    coingecko_id: "fetch-ai"
+  
+  # RWA - Real World Assets
+  bond:
+    code: BOND
+    issuer: "GDSTRSHXHGJ7ZIVRBXEYE5Q74XUVCUSEKEBR7UCHEUUEK72N7I7KJ6JH"
+    type: rwa_bond
+    category: income
+    underlying: "US Treasury Bonds"
+    
+  gold:
+    code: GOLD
+    issuer: "GDUKMGUGDZQK6YHVD4PBRXWXLD6THNCJENQLDNDB3KPO5RZYBWE4XK2P"
+    type: rwa_commodity
+    category: safe_haven
+    underlying: "Physical Gold"
+    
+  reit:
+    code: REIT
+    issuer: "GACKTN5DAZGWXRWB2WLM6OPBDHAMT6SJNGLJZPQMEZBUR4JUGBX2UK7V"
+    type: rwa_real_estate
+    category: income
+    underlying: "Commercial Real Estate"
+
+# 资产分类
+asset_categories:
+  safe_haven:
+    - usdc
+    - usdt
+    - gold
+  
+  growth:
+    - xlm
+    - btc
+    - eth
+  
+  income:
+    - bond
+    - reit
+  
+  volatile:
+    - btc
+    - eth
+
+# 多资产交易配置
+multi_asset_trading:
+  base_currency: usdc  # 所有交易以USDC计价
+  settlement_currency: usdc  # 所有利润转换为USDC
+  
+  # 资产权重限制
+  max_single_asset_weight: 0.30  # 单个资产最大30%
+  min_stable_allocation: 0.20     # 至少保持20% stablecoin
+  max_crypto_allocation: 0.50     # 加密货币最大50%
+  max_rwa_allocation: 0.60        # RWA最大60%
+  
+  # 交易限制
+  max_trade_size_usd: 1000
+  min_trade_size_usd: 10
+  
+  # 再平衡参数
+  rebalance_threshold: 0.05       # 5%偏差触发再平衡
+  rebalance_interval_hours: 24    # 最少24小时再平衡一次
+
+# 风险参数
+risk_parameters:
+  # VaR计算
+  var_confidence_level: 0.95
+  var_time_horizon_days: 1
+  
+  # CVaR
+  cvar_confidence_level: 0.95
+  
+  # 性能指标
+  sharpe_risk_free_rate: 0.04
+  target_sharpe_ratio: 1.5
+  
+  # 回撤控制
+  max_acceptable_drawdown: 0.20
+  max_volatility: 0.50
+
+risk:
+  max_slippage_bps: 30
+  min_pool_depth_usd: 50000
+  pool_score_threshold: 0.6
+  max_trade_usdc: 400
+  pair_cooldown_sec: 60
+  daily_max_trades_per_pair: 10
+
+strategy:
+  s1:
+    ema_fast: 5
+    ema_slow: 20
+    vol_z_min: 1.0
+    tp_pct: 0.006
+    sl_pct: 0.0035
+    timeout_sec: 90
+  s2:
+    impact_gap_bps_in: 20
+    exit_gap_bps: 10
+    timeout_sec: 60
+  s3:
+    path_improve_bps_min: 15
+    split_trades: 2
+
+stablecoin:
+  volatility_threshold_high: 0.3  # Convert to USDC when volatility > 30%
+  volatility_threshold_low: 0.15  # Convert from USDC when volatility < 15%
+  usdc_allocation_target: 30.0    # Target USDC allocation percentage
+  conversion_amount_ratio: 0.5    # Convert 50% of position when triggered
+  price_history_window: 20        # Number of price points for volatility calculation
+
+# 交易策略配置
+trading_strategies:
+  # 启用的策略
+  enabled_strategies:
+    - buy_and_hold
+    - macd_strategy
+    - kdj_rsi_strategy
+    - zscore_mean_reversion
+    - lgbm_strategy
+    - lstm_strategy
+    - transformer_strategy
+    - sac_strategy
+    - ppo_strategy
+    - dqn_strategy
+  
+  # 策略权重（用于聚合信号）
+  strategy_weights:
+    buy_and_hold: 0.8
+    macd_strategy: 1.0
+    kdj_rsi_strategy: 1.2
+    zscore_mean_reversion: 1.0
+    lgbm_strategy: 1.3
+    lstm_strategy: 1.4
+    transformer_strategy: 1.5
+    sac_strategy: 1.2
+    ppo_strategy: 1.3
+    dqn_strategy: 1.2
+
+# 投资组合优化配置
+portfolio_optimization:
+  # 交易的币种列表
+  trading_assets:
+    - BTC
+    - ETH
+    - SOL
+    - USDT
+    - USDC
+    - ARB
+    - LINK
+    - AAVE
+    - LDO
+    - FET
+  
+  # 风险容忍度 (0-1)
+  risk_tolerance: 0.6
+  
+  # USDC对冲
+  usdc_hedge:
+    min_ratio: 0.2  # 最小20% USDC
+    max_ratio: 0.5  # 最大50% USDC
+    dynamic_adjustment: true
+  
+  # 单个资产限制
+  position_limits:
+    high_risk_max: 0.25  # BTC, ETH, SOL, FET最多25%
+    medium_risk_max: 0.20  # LINK, AAVE, LDO, ARB最多20%
+    stablecoin_min: 0.15  # 稳定币至少15%
+  
+  # 再平衡配置
+  rebalance:
+    threshold: 0.05  # 5%偏差触发再平衡
+    frequency: 3600  # 每小时检查一次
+
+# 风险管理配置（Risk Agent）
+risk_management:
+  # 滑点监控
+  slippage:
+    max_slippage_bps: 50  # 最大允许滑点 50 bps (0.5%)
+    warning_slippage_bps: 30  # 警告滑点 30 bps (0.3%)
+    halt_on_excessive_slippage: true
+    consecutive_violations_to_halt: 3
+  
+  # 流动性监控
+  liquidity:
+    min_liquidity_usd: 50000  # 最小流动性 $50,000
+    min_liquidity_score: 0.5  # 最小流动性评分 0.5/1.0
+    min_bid_ask_depth: 25000  # 最小买卖深度 $25,000
+    max_spread_bps: 100  # 最大价差 100 bps (1%)
+    halt_on_low_liquidity: true
+  
+  # Portfolio风险限制
+  portfolio:
+    max_var_95: 0.10  # 最大VaR (95%) = 10%
+    max_var_99: 0.15  # 最大VaR (99%) = 15%
+    max_portfolio_risk: 0.75  # 最大综合风险评分
+    min_sharpe_ratio: 0.5  # 最小Sharpe Ratio
+    max_drawdown: 0.20  # 最大回撤 20%
+    min_diversification: 0.3  # 最小分散化比率
+    max_concentration: 0.7  # 最大集中度
+  
+  # 异常检测
+  anomaly_detection:
+    price_spike_threshold: 0.15  # 15%价格突变
+    price_spike_critical: 0.25  # 25%严重突变
+    volume_anomaly_multiplier: 3.0  # 3倍正常交易量
+    volume_critical_multiplier: 5.0  # 5倍严重异常
+    liquidity_drop_threshold: 0.5  # 流动性下降50%
+    enable_auto_halt: true  # 启用自动暂停
+  
+  # 交易暂停机制
+  halt_mechanism:
+    enable: true
+    auto_resume: false  # 不自动恢复，需要手动
+    max_halt_duration_minutes: 60  # 最长暂停时间
+    critical_alerts_threshold: 3  # 3个Critical警报触发暂停
+    halt_cooldown_minutes: 10  # 暂停后冷却时间
+  
+  # 实时监控
+  monitoring:
+    check_interval_seconds: 30  # 每30秒检查一次
+    alert_retention_hours: 24  # 警报保留24小时
+    metrics_history_hours: 48  # 指标历史保留48小时
+    
+  # 风险报告
+  reporting:
+    generate_hourly_report: true
+    generate_daily_report: true
+    include_all_metrics: true  # 包含所有风险指标
+    export_format: "json"  # json, csv, html
+  
+  # Portfolio批准阈值（用于Multi-Agent Risk评估）
+  portfolio_approval:
+    max_single_asset_percent: 100  # 单一资产最大占比（%）
+    max_high_risk_strategy_percent: 100  # 高风险策略最大占比（%）
+    min_asset_diversification: 1  # 最少资产数量
+    max_portfolio_risk_score: 9.0  # 最大风险评分（0-10）
+    require_trading_intent: true  # 是否需要实际交易意图（不能全HOLD）
+    approval_mode: "pragmatic"  # strict, balanced, pragmatic
+    
+# 交易频率配置
+trading_frequency:
+  mode: "day_trade"  # Options: "intraday" (日内), "day_trade" (日交易，不日内), "swing" (波段), "position" (长期持仓)
+  
+  # Day Trade模式配置（默认）
+  day_trade:
+    min_holding_period_hours: 24  # 最短持仓24小时（避免日内交易）
+    max_trades_per_day: 5  # 每日最多5笔交易
+    rebalance_frequency: "daily"  # 每日调仓一次
+    check_time: "09:00"  # UTC时间（美东市场开盘前）
+    
+  # 日内交易模式配置（如果需要）
+  intraday:
+    min_holding_period_hours: 0  # 可以立即平仓
+    max_trades_per_day: 20  # 每日最多20笔
+    rebalance_frequency: "hourly"  # 每小时检查一次
+    
+  # 波段交易模式
+  swing:
+    min_holding_period_hours: 168  # 至少持仓7天
+    max_trades_per_week: 10  # 每周最多10笔
+    rebalance_frequency: "weekly"  # 每周调仓
+    
+  # 长期持仓模式
+  position:
+    min_holding_period_hours: 720  # 至少持仓30天
+    max_trades_per_month: 5  # 每月最多5笔
+    rebalance_frequency: "monthly"  # 每月调仓
