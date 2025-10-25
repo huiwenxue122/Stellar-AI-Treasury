@@ -55,10 +55,12 @@ htmlcov/
 # Streamlit
 .streamlit/secrets.toml
 
-# Stellar Contracts (optional - keep build artifacts out)
+# Stellar Contracts (keep build artifacts out - they are large!)
 contracts/**/target/
 contracts/**/*.wasm
-Cargo.lock
+**/Cargo.lock
+*.rlib
+*.rmeta
 
 # macOS
 .DS_Store
