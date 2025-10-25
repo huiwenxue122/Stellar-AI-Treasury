@@ -9,8 +9,13 @@ from dataclasses import dataclass
 import json
 from openai import AsyncOpenAI
 import os
+import pandas as pd
+import numpy as np
 from agents.trading_strategies import TradingStrategies
 from agents.agent_conversation_logger import get_conversation_logger
+from strategies.library import get_strategy_library
+from selector.context_features import build_regime_features
+from selector.thompson_selector import ThompsonSelector, ThompsonSelectorConfig, create_selector
 
 @dataclass
 class TradingSignalWithRisk:
@@ -46,6 +51,23 @@ class MultiAgentOrchestratorWithTools:
         # Initialize 10 trading strategies
         self.trading_strategies = TradingStrategies(config)
         
+        # Initialize strategy library
+        self.strategy_library = get_strategy_library()
+        
+        # Initialize bandit selector
+        self.selector_config = ThompsonSelectorConfig(
+            n_arms=len(self.strategy_library.get_strategy_names()),
+            n_features=50,  # Will be updated based on actual features
+            alpha=1.0,
+            beta=1.0
+        )
+        self.selector = create_selector('thompson', self.selector_config)
+        
+        # Load selector state if exists
+        selector_state_path = 'artifacts/selector_state.pkl'
+        if os.path.exists(selector_state_path):
+            self.selector.load_state(selector_state_path)
+        
         # Define strategy tools for OpenAI Function Calling
         self.strategy_tools = self._create_strategy_tools()
         
@@ -56,6 +78,21 @@ class MultiAgentOrchestratorWithTools:
         """Create OpenAI function tools from trading strategies"""
         
         tools = [
+            {
+                "type": "function",
+                "function": {
+                    "name": "bandit_select_strategy",
+                    "description": "Return top-k recommended strategies for the given asset using contextual bandit selector.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "asset": {"type": "string", "description": "Asset symbol (e.g., BTC)"},
+                            "topk": {"type": "integer", "description": "How many strategies to return", "default": 2}
+                        },
+                        "required": ["asset"]
+                    }
+                }
+            },
             {
                 "type": "function",
                 "function": {
@@ -235,6 +272,10 @@ class MultiAgentOrchestratorWithTools:
         
         asset = arguments.get('asset', '').upper()
         
+        # Handle bandit strategy selection
+        if function_name == "bandit_select_strategy":
+            return await self._execute_bandit_selector(asset, arguments, market_data)
+        
         # Map function names to strategy method names
         strategy_map = {
             'buy_and_hold_strategy': 'buy_and_hold',
@@ -269,6 +310,69 @@ class MultiAgentOrchestratorWithTools:
             }
         except Exception as e:
             return {"error": str(e)}
+    
+    async def _execute_bandit_selector(self, asset: str, arguments: Dict, market_data: Dict) -> Dict:
+        """Execute bandit strategy selector"""
+        try:
+            topk = arguments.get('topk', 2)
+            
+            # 1) 从 market_data 提取该资产的价格序列与特征
+            prices = market_data.get('prices', [])
+            if not prices:
+                return {"error": f"No price data available for {asset}"}
+            
+            # 转换为pandas Series
+            if isinstance(prices, list):
+                prices_series = pd.Series(prices)
+            else:
+                prices_series = prices
+            
+            # 构建情境特征
+            features = build_regime_features(prices_series)
+            
+            # 选择数值特征
+            numeric_features = features.select_dtypes(include=[np.number])
+            if numeric_features.empty:
+                return {"error": "No numeric features available"}
+            
+            # 获取最新特征向量
+            latest_features = numeric_features.iloc[-1].values
+            
+            # 2) 加载 selector 状态（artifacts/selector_state.pkl），若无则用默认后验
+            # 状态已在初始化时加载
+            
+            # 3) 用 selector.pick(x_t, topk) 返回策略名、置信度/采样得分
+            selected_arms = self.selector.pick(latest_features, topk)
+            
+            # 获取策略名称
+            strategy_names = self.strategy_library.get_strategy_names()
+            selected_strategies = [strategy_names[arm] for arm in selected_arms]
+            
+            # 获取期望奖励
+            expected_rewards = self.selector.get_expected_rewards(latest_features)
+            strategy_scores = {strategy_names[arm]: expected_rewards[arm] for arm in selected_arms}
+            
+            # 4) return {"asset": asset, "candidates": [{"strategy": "...", "score": 0.73}, ...]}
+            candidates = []
+            for strategy_name in selected_strategies:
+                candidates.append({
+                    "strategy": strategy_name,
+                    "score": strategy_scores[strategy_name]
+                })
+            
+            return {
+                "asset": asset,
+                "candidates": candidates,
+                "features_used": len(latest_features),
+                "selector_info": {
+                    "is_initialized": self.selector.is_initialized,
+                    "total_pulls": np.sum(self.selector.n_pulls),
+                    "arm_stats": self.selector.get_arm_stats()
+                }
+            }
+            
+        except Exception as e:
+            return {"error": f"Bandit selector error: {str(e)}"}
     
     async def run_multi_agent_cycle(self, market_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -348,12 +452,19 @@ class MultiAgentOrchestratorWithTools:
         system_prompt = """You are James Simons, founder of Renaissance Technologies, one of the most successful quantitative hedge funds.
 
 Your mission:
-1. Analyze each tradable asset in the portfolio
-2. For each asset, select and test the most appropriate trading strategies from your toolkit
+1. FIRST: Use bandit_select_strategy(asset) to get AI-recommended strategies for each asset
+2. THEN: Test only the recommended strategies (not all strategies)
 3. Choose the best strategy for each asset based on current market conditions
 4. Construct an optimal portfolio with risk-reward balance
 
+IMPORTANT WORKFLOW:
+1. For each asset, FIRST call bandit_select_strategy(asset) to get top-k recommended strategies
+2. ONLY test the recommended strategies (ignore others to save time)
+3. Compare results and select the best one for each asset
+4. Build final portfolio
+
 Available strategy tools:
+- bandit_select_strategy: AI-recommended strategies based on market context (USE THIS FIRST)
 - buy_and_hold_strategy: Long-term appreciation (low risk)
 - macd_strategy: Trend following (medium risk)
 - kdj_rsi_strategy: Momentum extremes (medium risk)
@@ -365,12 +476,14 @@ Available strategy tools:
 - ppo_strategy: RL stable learning (medium-high risk)
 - dqn_strategy: RL Q-learning (high risk)
 
-Strategy:
-1. For volatile assets (BTC, ETH): Test RL and DL strategies
-2. For stable growth (SOL, LINK): Test technical indicators
-3. For risk management: Include mean reversion strategies
-4. Diversify: Don't use same strategy for all assets
-5. Build portfolio: Select 1-4 best signals across different assets
+Strategy Selection Process:
+1. Call bandit_select_strategy(asset) for each asset to get AI recommendations
+2. Test only the recommended strategies (typically 2-3 per asset)
+3. For volatile assets (BTC, ETH): AI will likely recommend RL/DL strategies
+4. For stable growth (SOL, LINK): AI will likely recommend technical indicators
+5. For risk management: AI will likely recommend mean reversion strategies
+6. Diversify: Don't use same strategy for all assets
+7. Build portfolio: Select 1-4 best signals across different assets
 
 Trading Frequency: DAY TRADE MODE
 - Minimum holding period: 24 hours (NO intraday trading)
@@ -378,7 +491,11 @@ Trading Frequency: DAY TRADE MODE
 - Max trades per day: 5
 - Focus on positions that hold for at least 1 full day
 
-Call strategy tools to test each asset, then decide final portfolio composition."""
+Workflow:
+1. For each asset: bandit_select_strategy(asset) → get recommendations
+2. Test only recommended strategies → compare results
+3. Select best strategy per asset → build portfolio
+4. Final portfolio composition with risk-reward balance"""
 
         # Get current holdings
         current_holdings = market_data.get('current_holdings', {})

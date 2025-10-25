@@ -44,7 +44,7 @@ smart_contract:
 
 # 市场数据配置
 market_data:
-  use_live_data: true  # 使用真实在线数据
+  use_live_data: false  # 使用模拟数据（测试用）
   
   # 数据源优先级
   crypto_sources:
