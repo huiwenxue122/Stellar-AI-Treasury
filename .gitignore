@@ -80,6 +80,10 @@ reports/
 *.json.gz
 strategy_evaluation_report.json
 
+# Large data files (can be regenerated)
+data/stellar_enhanced_data.json
+data/stellar_ohlc_15m_all.csv
+
 # Virtual environment (project-specific)
 stellar-ai-env/
 
