@@ -73,3 +73,23 @@ contracts/**/*.wasm
 *.bak
 *.swp
 
+# Project-specific
+artifacts/
+reports/
+*.pkl
+*.json.gz
+strategy_evaluation_report.json
+
+# Virtual environment (project-specific)
+stellar-ai-env/
+
+# Cleanup script
+cleanup_for_github.sh
+
+# Real data directories (if any)
+real_data/
+
+# Large files
+*.pdf
+*.pptx
+

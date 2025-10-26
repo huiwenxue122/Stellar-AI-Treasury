@@ -815,12 +815,23 @@ INVALID portfolios (will fail execution):
         
         # 🔧 FIX: Ensure all portfolio signals have asset_price with fallback from market_data
         for signal in portfolio:
-            if 'asset_price' not in signal or signal['asset_price'] is None or signal['asset_price'] == 0:
-                asset = signal.get('asset', '').upper()
+            asset = signal.get('asset', '').upper()
+            asset_price = signal.get('asset_price')
+            
+            # Check if asset_price is missing, None, 0, or a string
+            needs_fix = (
+                asset_price is None or 
+                asset_price == 0 or 
+                isinstance(asset_price, str) or
+                (isinstance(asset_price, (int, float)) and asset_price <= 0)
+            )
+            
+            if needs_fix:
                 # Try to get price from market_data
                 asset_price_data = market_data.get('assets', {}).get(asset.lower(), {})
-                signal['asset_price'] = asset_price_data.get('price', 50000.0)  # Fallback to 50K
-                print(f"   🔧 Added missing asset_price for {asset}: ${signal['asset_price']:.2f}")
+                new_price = asset_price_data.get('price', 50000.0)  # Fallback to 50K
+                signal['asset_price'] = float(new_price)
+                print(f"   🔧 Fixed asset_price for {asset}: {asset_price} → ${signal['asset_price']:.2f}")
         
         if reasoning:
             print(f"\n   💡 Portfolio Logic: {reasoning[:150]}...")

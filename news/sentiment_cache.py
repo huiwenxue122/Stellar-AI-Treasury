@@ -128,6 +128,20 @@ class SentimentCache:
         threshold = timedelta(minutes=max_age_minutes) if max_age_minutes else self.ttl
         
         return age < threshold
+    
+    def get_sentiment_for_asset(self, asset: str, timestamp: datetime = None) -> Optional[Dict]:
+        """
+        Get sentiment for asset at specific timestamp (for compatibility with context_features)
+        
+        Args:
+            asset: Asset symbol (BTC, ETH, etc.)
+            timestamp: Optional timestamp (ignored, uses latest cached data)
+        
+        Returns:
+            Cached sentiment dict or None if not found/expired
+        """
+        # Timestamp parameter is ignored - we always return latest cached data
+        return self.get(asset)
 
 
 # Singleton instance for global use

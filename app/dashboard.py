@@ -396,7 +396,11 @@ class TreasuryDashboard:
                     button_label = f"{label} {'🔒' if is_disabled else ''}"
                     
                     if st.button(button_label, key=f"preset_{amount}", disabled=is_disabled):
+                        # Only set temp_capital, number_input will use it via session state
                         st.session_state.temp_capital = amount
+                        # Delete capital_input to force re-initialization with new value
+                        if 'capital_input' in st.session_state:
+                            del st.session_state.capital_input
                         st.rerun()
             
             # Show help for locked presets
@@ -405,22 +409,24 @@ class TreasuryDashboard:
                 st.caption(f"🔒 Locked presets are outside your tier's limits. Upgrade tier to unlock.")
             
             # Custom input with validation
-            default_capital = st.session_state.get('temp_capital', rec['recommended'])
-            
-            # 🔧 FIX: Ensure default_capital is float (streamlit requires consistent types)
-            default_capital = float(default_capital)
-            
-            # Ensure default is within tier limits
-            if default_capital < rec['min']:
-                default_capital = rec['min']
-            elif default_capital > rec['max']:
-                default_capital = rec['max']
+            # Use session_state value if exists, otherwise use recommended
+            if 'capital_input' not in st.session_state:
+                # Initialize from temp_capital or recommended value
+                default_capital = st.session_state.get('temp_capital', rec['recommended'])
+                default_capital = float(default_capital)
+                
+                # Ensure default is within tier limits
+                if default_capital < rec['min']:
+                    default_capital = rec['min']
+                elif default_capital > rec['max']:
+                    default_capital = rec['max']
+                
+                st.session_state.capital_input = default_capital
             
             capital_usd = st.number_input(
                 f"Enter your capital (${rec['min']:,.0f} - ${rec['max']:,.0f} USD):",
                 min_value=rec['min'],
                 max_value=rec['max'],
-                value=default_capital,
                 step=1000.0,
                 key='capital_input',
                 help=f"This amount will be converted to XLM for simulated trading on Stellar testnet."

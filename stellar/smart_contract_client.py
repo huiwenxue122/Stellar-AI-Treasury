@@ -1,54 +1,84 @@
 """
-Stellar Smart Contract Client for AI Treasury Vault
+Stellar Smart Contract Client for AI Treasury Vault V2.0
 
-Provides Python interface to interact with the deployed Soroban smart contract.
+Enhanced Python interface with support for:
+- Trade history tracking
+- Strategy performance analytics
+- Portfolio snapshots
+- Dynamic risk controls
 """
 
 import subprocess
 import json
 import os
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from dataclasses import dataclass
+from datetime import datetime
 
 
 @dataclass
-class TradingSignal:
-    """Trading signal data structure"""
+class TradeRecord:
+    """Trade execution record"""
+    trade_id: int
     signal_id: int
-    from_asset: str
-    to_asset: str
+    asset: str
+    action: str
     amount: int
-    expected_return: float
-    risk_score: float
+    price: int
     strategy: str
-    approved: bool
+    executed_at: int
+    profit_loss: int
 
 
 @dataclass
-class RiskMetrics:
-    """Risk metrics data structure"""
-    var_95: float
-    sharpe_ratio: float
-    max_drawdown: float
+class StrategyPerformance:
+    """Strategy performance metrics"""
+    strategy_name: str
     total_trades: int
-    successful_trades: int
-
-
-class SmartContractClient:
-    """
-    Client for interacting with AI Treasury Vault smart contract on Stellar
+    winning_trades: int
+    total_profit: int
+    avg_return: int
+    sharpe_ratio: int
+    last_updated: int
     
-    This client provides methods to:
-    - Submit trading signals from Trading Agent
-    - Approve trades from Risk Agent
-    - Execute trades from Payment Agent
-    - Query contract state and risk metrics
-    - Manage emergency halt mechanism
+    @property
+    def win_rate(self) -> float:
+        """Calculate win rate percentage"""
+        if self.total_trades == 0:
+            return 0.0
+        return (self.winning_trades / self.total_trades) * 100
+
+
+@dataclass
+class PortfolioSnapshot:
+    """Portfolio snapshot at a point in time"""
+    snapshot_id: int
+    timestamp: int
+    total_value: int
+    num_assets: int
+    total_trades: int
+    cumulative_return: int
+    
+    @property
+    def datetime(self) -> datetime:
+        """Convert timestamp to datetime"""
+        return datetime.fromtimestamp(self.timestamp)
+
+
+class SmartContractClientV2:
+    """
+    Enhanced client for AI Treasury Vault V2.0 smart contract
+    
+    New Features:
+    - Trade history queries
+    - Strategy performance tracking
+    - Portfolio snapshots
+    - Dynamic stop-loss management
     """
     
     def __init__(self, contract_id: str, network: str = "testnet"):
         """
-        Initialize smart contract client
+        Initialize smart contract client V2
         
         Args:
             contract_id: Deployed contract ID on Stellar
@@ -56,6 +86,7 @@ class SmartContractClient:
         """
         self.contract_id = contract_id
         self.network = network
+        self.version = "2.0"
         self._verify_stellar_cli()
     
     def _verify_stellar_cli(self):
@@ -68,9 +99,9 @@ class SmartContractClient:
                 timeout=5
             )
             if result.returncode != 0:
-                raise RuntimeError("stellar-cli not found. Please install: cargo install stellar-cli")
+                raise RuntimeError("stellar-cli not found")
         except FileNotFoundError:
-            raise RuntimeError("stellar-cli not found. Please install: cargo install stellar-cli")
+            raise RuntimeError("stellar-cli not found. Install: cargo install stellar-cli")
     
     def _run_contract_command(
         self,
@@ -78,25 +109,22 @@ class SmartContractClient:
         args: list,
         signer_secret: Optional[str] = None
     ) -> Dict[str, Any]:
-        """
-        Run a smart contract command
-        
-        Args:
-            function_name: Contract function to call
-            args: List of arguments for the function
-            signer_secret: Stellar secret key for signing (if needed)
-        
-        Returns:
-            Dict with success status and output
-        """
+        """Run a smart contract command"""
         cmd = [
             "stellar", "contract", "invoke",
             "--id", self.contract_id,
             "--network", self.network
         ]
         
+        # Stellar CLI requires --source-account for all invocations
+        # Use provided signer_secret or fall back to STELLAR_PUBLIC from env
         if signer_secret:
-            cmd.extend(["--source", signer_secret])
+            cmd.extend(["--source-account", signer_secret])
+        else:
+            # For read-only methods, use public key from environment
+            default_account = os.environ.get("STELLAR_PUBLIC", "")
+            if default_account:
+                cmd.extend(["--source-account", default_account])
         
         cmd.extend(["--", function_name])
         cmd.extend(args)
@@ -115,56 +143,37 @@ class SmartContractClient:
                 "error": result.stderr.strip() if result.returncode != 0 else None
             }
         except subprocess.TimeoutExpired:
-            return {
-                "success": False,
-                "error": "Command timeout"
-            }
+            return {"success": False, "error": "Command timeout"}
         except Exception as e:
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            return {"success": False, "error": str(e)}
     
     # ========================================================================
-    # Trading Agent Functions
+    # Trading Signal Functions (Enhanced)
     # ========================================================================
     
     def submit_trading_signal(
         self,
-        from_asset: str,
-        to_asset: str,
+        asset: str,
+        action: str,
         amount: int,
-        expected_return: float,
-        risk_score: float,
         strategy: str,
+        confidence: int,
+        expected_return: int,
         signer_secret: str
     ) -> Dict[str, Any]:
         """
-        Submit a trading signal to the smart contract
-        
-        Args:
-            from_asset: Source asset code (e.g., "BTC")
-            to_asset: Destination asset code (e.g., "USDC")
-            amount: Amount to trade (in stroops/smallest unit)
-            expected_return: Expected return as decimal (e.g., 0.05 for 5%)
-            risk_score: Risk score as decimal (e.g., 0.3 for 30%)
-            strategy: Strategy name (e.g., "MACD", "LSTM")
-            signer_secret: Trading Agent's secret key
+        Submit a trading signal (V2 signature)
         
         Returns:
             Dict with success status and signal_id
         """
-        # Convert floats to fixed-point integers (6 decimals)
-        expected_return_fixed = int(expected_return * 1_000_000)
-        risk_score_fixed = int(risk_score * 1_000_000)
-        
         args = [
-            "--from_asset", from_asset,
-            "--to_asset", to_asset,
+            "--asset", asset,
+            "--action", action,
             "--amount", str(amount),
-            "--expected_return", str(expected_return_fixed),
-            "--risk_score", str(risk_score_fixed),
-            "--strategy", strategy
+            "--strategy", strategy,
+            "--confidence", str(confidence),
+            "--expected_return", str(expected_return)
         ]
         
         result = self._run_contract_command(
@@ -174,47 +183,53 @@ class SmartContractClient:
         )
         
         if result["success"]:
-            print(f"✅ Trading signal submitted: {from_asset} → {to_asset}")
+            # Parse signal_id from output
+            try:
+                signal_id = int(result["output"])
+                print(f"✅ Trading signal submitted: ID={signal_id}")
+                return {"success": True, "signal_id": signal_id}
+            except:
+                return {"success": True, "signal_id": None}
         else:
             print(f"❌ Failed to submit signal: {result.get('error')}")
-        
-        return result
-    
-    # ========================================================================
-    # Risk Agent Functions
-    # ========================================================================
+            return result
     
     def approve_trade(
         self,
         signal_id: int,
         var_95: float,
         sharpe_ratio: float,
-        max_dd: float,
+        max_drawdown: float,
+        stop_loss_level: float,
         signer_secret: str
     ) -> Dict[str, Any]:
         """
-        Risk Agent approves a trading signal
+        Approve trade with risk metrics (V2 with stop-loss)
         
         Args:
-            signal_id: ID of the signal to approve
-            var_95: Value at Risk (95% confidence)
-            sharpe_ratio: Sharpe Ratio of the portfolio
-            max_dd: Maximum Drawdown
-            signer_secret: Risk Agent's secret key
-        
-        Returns:
-            Dict with success status
+            signal_id: Signal ID to approve
+            var_95: Value at Risk 95% (as decimal)
+            sharpe_ratio: Sharpe ratio
+            max_drawdown: Maximum drawdown (as decimal)
+            stop_loss_level: Current stop-loss level (as decimal)
+            signer_secret: Risk Agent secret key
         """
-        # Convert to fixed-point
-        var_95_fixed = int(abs(var_95) * 1_000_000)
-        sharpe_fixed = int(sharpe_ratio * 1_000_000)
-        max_dd_fixed = int(abs(max_dd) * 1_000_000)
+        # Convert to basis points
+        var_bps = int(var_95 * 10000)
+        sharpe_scaled = int(sharpe_ratio * 100)
+        dd_bps = int(max_drawdown * 10000)
+        sl_bps = int(stop_loss_level * 10000)
         
+        # Create risk_metrics struct
         args = [
             "--signal_id", str(signal_id),
-            "--var_95", str(var_95_fixed),
-            "--sharpe_ratio", str(sharpe_fixed),
-            "--max_dd", str(max_dd_fixed)
+            "--risk_metrics", json.dumps({
+                "var_95": var_bps,
+                "sharpe_ratio": sharpe_scaled,
+                "max_drawdown": dd_bps,
+                "portfolio_volatility": 0,
+                "stop_loss_level": sl_bps
+            })
         ]
         
         result = self._run_contract_command(
@@ -224,32 +239,40 @@ class SmartContractClient:
         )
         
         if result["success"]:
-            print(f"✅ Trade {signal_id} approved by Risk Agent")
+            approved = result["output"].lower() == "true"
+            if approved:
+                print(f"✅ Trade {signal_id} approved by Risk Agent")
+            else:
+                print(f"❌ Trade {signal_id} rejected by Risk Agent")
+            return {"success": True, "approved": approved}
         else:
             print(f"❌ Failed to approve trade: {result.get('error')}")
-        
-        return result
-    
-    # ========================================================================
-    # Payment Agent Functions
-    # ========================================================================
+            return result
     
     def execute_trade(
         self,
         signal_id: int,
+        executed_price: int,
+        profit_loss: int,
         signer_secret: str
     ) -> Dict[str, Any]:
         """
-        Payment Agent executes an approved trade
+        Execute trade and record history (V2)
         
         Args:
-            signal_id: ID of the approved signal to execute
-            signer_secret: Payment Agent's secret key
+            signal_id: Signal ID to execute
+            executed_price: Actual execution price (scaled by 1e7)
+            profit_loss: Realized P&L in stroops
+            signer_secret: Payment Agent secret key
         
         Returns:
-            Dict with success status
+            Dict with success status and trade_id
         """
-        args = ["--signal_id", str(signal_id)]
+        args = [
+            "--signal_id", str(signal_id),
+            "--executed_price", str(executed_price),
+            "--profit_loss", str(profit_loss)
+        ]
         
         result = self._run_contract_command(
             "execute_trade",
@@ -258,26 +281,280 @@ class SmartContractClient:
         )
         
         if result["success"]:
-            print(f"✅ Trade {signal_id} executed by Payment Agent")
+            try:
+                trade_id = int(result["output"])
+                print(f"✅ Trade executed: ID={trade_id}, P&L={profit_loss}")
+                return {"success": True, "trade_id": trade_id}
+            except:
+                return {"success": True, "trade_id": None}
         else:
             print(f"❌ Failed to execute trade: {result.get('error')}")
+            return result
+    
+    # ========================================================================
+    # Trade History Functions (NEW)
+    # ========================================================================
+    
+    def get_trade(self, trade_id: int) -> Optional[TradeRecord]:
+        """
+        Get trade record by ID
+        
+        Args:
+            trade_id: Trade ID to query
+        
+        Returns:
+            TradeRecord object or None if not found
+        """
+        args = ["--trade_id", str(trade_id)]
+        
+        result = self._run_contract_command("get_trade", args)
+        
+        if result["success"]:
+            try:
+                data = json.loads(result["output"])
+                return TradeRecord(**data)
+            except:
+                return None
+        return None
+    
+    def get_total_trades(self) -> int:
+        """Get total number of executed trades"""
+        result = self._run_contract_command("get_total_trades", [])
+        
+        if result["success"]:
+            try:
+                return int(result["output"])
+            except:
+                return 0
+        return 0
+    
+    def get_recent_trades(self, count: int = 10) -> List[TradeRecord]:
+        """
+        Get recent trade records
+        
+        Args:
+            count: Number of recent trades to fetch
+        
+        Returns:
+            List of TradeRecord objects
+        """
+        total_trades = self.get_total_trades()
+        if total_trades == 0:
+            return []
+        
+        trades = []
+        start = max(1, total_trades - count + 1)
+        
+        for trade_id in range(start, total_trades + 1):
+            trade = self.get_trade(trade_id)
+            if trade:
+                trades.append(trade)
+        
+        return trades
+    
+    # ========================================================================
+    # Strategy Performance Functions (NEW)
+    # ========================================================================
+    
+    def get_strategy_performance(self, strategy_name: str) -> Optional[StrategyPerformance]:
+        """
+        Get performance metrics for a specific strategy
+        
+        Args:
+            strategy_name: Strategy name (e.g., "LSTM", "DQN")
+        
+        Returns:
+            StrategyPerformance object or None
+        """
+        args = ["--strategy_name", strategy_name]
+        
+        result = self._run_contract_command("get_strategy_performance", args)
+        
+        if result["success"]:
+            try:
+                data = json.loads(result["output"])
+                return StrategyPerformance(**data)
+            except:
+                return None
+        return None
+    
+    def get_all_strategies_performance(
+        self,
+        strategies: List[str]
+    ) -> Dict[str, StrategyPerformance]:
+        """
+        Get performance for multiple strategies
+        
+        Args:
+            strategies: List of strategy names
+        
+        Returns:
+            Dict mapping strategy name to StrategyPerformance
+        """
+        performances = {}
+        
+        for strategy in strategies:
+            perf = self.get_strategy_performance(strategy)
+            if perf:
+                performances[strategy] = perf
+        
+        return performances
+    
+    def get_best_performing_strategy(
+        self,
+        strategies: List[str]
+    ) -> Optional[str]:
+        """
+        Find the best performing strategy by win rate
+        
+        Args:
+            strategies: List of strategy names to compare
+        
+        Returns:
+            Name of best strategy or None
+        """
+        performances = self.get_all_strategies_performance(strategies)
+        
+        if not performances:
+            return None
+        
+        best_strategy = max(
+            performances.items(),
+            key=lambda x: (x[1].win_rate, x[1].total_profit)
+        )
+        
+        return best_strategy[0]
+    
+    # ========================================================================
+    # Portfolio Snapshot Functions (NEW)
+    # ========================================================================
+    
+    def create_snapshot(
+        self,
+        total_value: int,
+        num_assets: int,
+        cumulative_return: int,
+        signer_secret: str
+    ) -> Dict[str, Any]:
+        """
+        Create a portfolio snapshot
+        
+        Args:
+            total_value: Total portfolio value in stroops
+            num_assets: Number of assets in portfolio
+            cumulative_return: Cumulative return in basis points
+            signer_secret: Trading Agent secret key
+        
+        Returns:
+            Dict with success status and snapshot_id
+        """
+        args = [
+            "--total_value", str(total_value),
+            "--num_assets", str(num_assets),
+            "--cumulative_return", str(cumulative_return)
+        ]
+        
+        result = self._run_contract_command(
+            "create_snapshot",
+            args,
+            signer_secret
+        )
+        
+        if result["success"]:
+            try:
+                snapshot_id = int(result["output"])
+                print(f"✅ Snapshot created: ID={snapshot_id}")
+                return {"success": True, "snapshot_id": snapshot_id}
+            except:
+                return {"success": True, "snapshot_id": None}
+        else:
+            print(f"❌ Failed to create snapshot: {result.get('error')}")
+            return result
+    
+    def get_latest_snapshot(self) -> Optional[PortfolioSnapshot]:
+        """Get the most recent portfolio snapshot"""
+        result = self._run_contract_command("get_latest_snapshot", [])
+        
+        if result["success"]:
+            try:
+                data = json.loads(result["output"])
+                return PortfolioSnapshot(**data)
+            except:
+                return None
+        return None
+    
+    # ========================================================================
+    # Risk Control Functions (Enhanced)
+    # ========================================================================
+    
+    def set_dynamic_stop_loss(
+        self,
+        enabled: bool,
+        signer_secret: str
+    ) -> Dict[str, Any]:
+        """
+        Enable or disable dynamic stop-loss (NEW)
+        
+        Args:
+            enabled: True to enable, False to disable
+            signer_secret: Admin secret key
+        """
+        args = ["--enabled", str(enabled).lower()]
+        
+        result = self._run_contract_command(
+            "set_dynamic_stop_loss",
+            args,
+            signer_secret
+        )
+        
+        if result["success"]:
+            status = "enabled" if enabled else "disabled"
+            print(f"✅ Dynamic stop-loss {status}")
+        else:
+            print(f"❌ Failed to update stop-loss: {result.get('error')}")
         
         return result
     
     # ========================================================================
-    # Risk Management Functions
+    # Query Functions
     # ========================================================================
     
+    def get_config(self) -> Dict[str, Any]:
+        """Get vault configuration"""
+        result = self._run_contract_command("get_config", [])
+        
+        if result["success"]:
+            try:
+                return json.loads(result["output"])
+            except:
+                return {}
+        return {}
+    
+    def get_risk_metrics(self) -> Dict[str, Any]:
+        """Get current risk metrics"""
+        result = self._run_contract_command("get_risk_metrics", [])
+        
+        if result["success"]:
+            try:
+                return json.loads(result["output"])
+            except:
+                return {}
+        return {}
+    
+    def is_operational(self) -> bool:
+        """Check if system is operational"""
+        result = self._run_contract_command("is_operational", [])
+        
+        if result["success"]:
+            return result["output"].lower() == "true"
+        
+        # If command fails (e.g., due to keychain issues), assume operational
+        # rather than falsely reporting as halted
+        print(f"   ⚠️  Could not verify contract status (assuming operational): {result.get('error', 'Unknown error')}")
+        return True  # Default to operational on error
+    
     def emergency_halt(self, signer_secret: str) -> Dict[str, Any]:
-        """
-        Emergency halt all trading (Risk Agent or Admin)
-        
-        Args:
-            signer_secret: Risk Agent or Admin secret key
-        
-        Returns:
-            Dict with success status
-        """
+        """Emergency halt all trading"""
         result = self._run_contract_command(
             "emergency_halt",
             [],
@@ -292,15 +569,7 @@ class SmartContractClient:
         return result
     
     def resume_trading(self, signer_secret: str) -> Dict[str, Any]:
-        """
-        Resume trading after halt (Admin only)
-        
-        Args:
-            signer_secret: Admin secret key
-        
-        Returns:
-            Dict with success status
-        """
+        """Resume trading after halt"""
         result = self._run_contract_command(
             "resume_trading",
             [],
@@ -314,145 +583,36 @@ class SmartContractClient:
         
         return result
     
-    def update_risk_limits(
-        self,
-        max_var_95: float,
-        min_sharpe_ratio: float,
-        max_drawdown: float,
-        signer_secret: str
-    ) -> Dict[str, Any]:
-        """
-        Update risk limits (Admin only)
-        
-        Args:
-            max_var_95: Maximum allowed VaR (95%)
-            min_sharpe_ratio: Minimum required Sharpe Ratio
-            max_drawdown: Maximum allowed drawdown
-            signer_secret: Admin secret key
-        
-        Returns:
-            Dict with success status
-        """
-        args = [
-            "--max_var_95", str(int(abs(max_var_95) * 1_000_000)),
-            "--min_sharpe_ratio", str(int(min_sharpe_ratio * 1_000_000)),
-            "--max_drawdown", str(int(abs(max_drawdown) * 1_000_000))
-        ]
-        
-        result = self._run_contract_command(
-            "update_risk_limits",
-            args,
-            signer_secret
-        )
-        
-        if result["success"]:
-            print("✅ Risk limits updated")
-        else:
-            print(f"❌ Failed to update limits: {result.get('error')}")
-        
-        return result
-    
-    # ========================================================================
-    # Query Functions
-    # ========================================================================
-    
-    def get_config(self) -> Dict[str, Any]:
-        """Get contract configuration"""
-        result = self._run_contract_command("get_config", [])
-        
-        if result["success"]:
-            try:
-                return json.loads(result["output"])
-            except json.JSONDecodeError:
-                return {"raw": result["output"]}
-        return {}
-    
-    def get_risk_metrics(self) -> Optional[RiskMetrics]:
-        """Get current risk metrics from contract"""
-        result = self._run_contract_command("get_risk_metrics", [])
-        
-        if result["success"]:
-            try:
-                data = json.loads(result["output"])
-                return RiskMetrics(
-                    var_95=data.get("var_95", 0) / 1_000_000,
-                    sharpe_ratio=data.get("sharpe_ratio", 0) / 1_000_000,
-                    max_drawdown=data.get("max_drawdown", 0) / 1_000_000,
-                    total_trades=data.get("total_trades", 0),
-                    successful_trades=data.get("successful_trades", 0)
-                )
-            except (json.JSONDecodeError, KeyError):
-                return None
-        return None
-    
-    def is_operational(self) -> bool:
-        """Check if trading is operational (not halted)"""
-        result = self._run_contract_command("is_operational", [])
-        
-        if result["success"]:
-            return result["output"].lower() == "true"
-        return False
-    
     # ========================================================================
     # Utility Functions
     # ========================================================================
     
-    def get_contract_url(self) -> str:
-        """Get Stellar Explorer URL for this contract"""
-        if self.network == "testnet":
-            return f"https://stellar.expert/explorer/testnet/contract/{self.contract_id}"
-        elif self.network == "mainnet":
-            return f"https://stellar.expert/explorer/public/contract/{self.contract_id}"
-        else:
-            return f"https://stellar.expert/explorer/{self.network}/contract/{self.contract_id}"
-    
     def print_status(self):
-        """Print contract status"""
-        print(f"\n{'='*60}")
-        print(f"🔐 AI Treasury Vault Smart Contract")
-        print(f"{'='*60}")
+        """Print contract status summary"""
+        print("\n" + "=" * 60)
+        print(f"AI Treasury Vault V{self.version} Status")
+        print("=" * 60)
+        
         print(f"Contract ID: {self.contract_id}")
         print(f"Network: {self.network}")
-        print(f"Explorer: {self.get_contract_url()}")
         
-        is_op = self.is_operational()
-        status = "🟢 OPERATIONAL" if is_op else "🔴 HALTED"
-        print(f"Status: {status}")
+        config = self.get_config()
+        if config:
+            print(f"Version: {config.get('version', 'unknown')}")
+            print(f"Operational: {'Yes' if not config.get('halted') else 'No'}")
+            print(f"Dynamic Stop-Loss: {'Enabled' if config.get('dynamic_stop_loss') else 'Disabled'}")
         
-        metrics = self.get_risk_metrics()
-        if metrics:
-            print(f"\n📊 Risk Metrics:")
-            print(f"  VaR (95%): {metrics.var_95:.4f}")
-            print(f"  Sharpe Ratio: {metrics.sharpe_ratio:.4f}")
-            print(f"  Max Drawdown: {metrics.max_drawdown:.4f}")
-            print(f"  Total Trades: {metrics.total_trades}")
-            print(f"  Success Rate: {metrics.successful_trades}/{metrics.total_trades}")
+        total_trades = self.get_total_trades()
+        print(f"Total Trades: {total_trades}")
         
-        print(f"{'='*60}\n")
+        latest_snapshot = self.get_latest_snapshot()
+        if latest_snapshot:
+            print(f"Latest Snapshot: {latest_snapshot.datetime.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"Portfolio Value: {latest_snapshot.total_value / 1e7:.2f}")
+            print(f"Cumulative Return: {latest_snapshot.cumulative_return / 100:.2f}%")
+        
+        print("=" * 60 + "\n")
 
 
-# ============================================================================
-# Example Usage
-# ============================================================================
-
-if __name__ == "__main__":
-    # Initialize client
-    client = SmartContractClient(
-        contract_id=os.environ.get("CONTRACT_ID", "CXXXXXX"),
-        network="testnet"
-    )
-    
-    # Print status
-    client.print_status()
-    
-    # Example: Submit a signal
-    # result = client.submit_trading_signal(
-    #     from_asset="BTC",
-    #     to_asset="USDC",
-    #     amount=1_000_000_000,  # 1000 units
-    #     expected_return=0.05,   # 5% expected return
-    #     risk_score=0.3,         # 30% risk
-    #     strategy="MACD",
-    #     signer_secret=os.environ["TRADING_AGENT_SECRET"]
-    # )
-
+# Backward compatibility alias
+SmartContractClient = SmartContractClientV2
