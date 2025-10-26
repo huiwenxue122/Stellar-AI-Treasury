@@ -3,7 +3,9 @@
 **AI-Powered Multi-Agent Quantitative Trading System on Stellar Blockchain**
 
 > An autonomous quantitative trading platform that combines **GPT-4o AI agents** with **Stellar Soroban smart contracts** to deliver transparent, secure, and intelligent portfolio management. Three specialized AI agents (Trading, Risk, Payment) collaborate in real-time, executing 10 advanced strategies while a custom Rust smart contract enforces risk limits on-chain. V2.0 features include on-chain trade history, strategy performance tracking, and portfolio snapshots—creating a complete audit trail on Stellar testnet.
-One link for demo you can quick visit demo:https://abc123.ngrok.io 
+One link for demo you can quick visit demo:[https://unreined-prehistorically-leon.ngrok-free.d](https://unreined-prehistorically-leon.ngrok-free.d
+                                      
+
 [![Stellar](https://img.shields.io/badge/Stellar-Soroban-blue)](https://stellar.org)
 [![Python](https://img.shields.io/badge/Python-3.11-green)](https://python.org)
 [![Rust](https://img.shields.io/badge/Rust-Soroban-orange)](https://rust-lang.org)
