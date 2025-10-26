@@ -278,113 +278,183 @@ class TreasuryDashboard:
         # 💰 NEW: Initial Capital Configuration
         st.subheader("💰 Initial Capital Configuration")
         
-        # Tier-based recommendations
-        tier = st.session_state.user_tier
-        tier_recommendations = {
-            'beginner': {
-                'min': 100.0,
-                'recommended': 1000.0,
-                'max': 10000.0,
-                'message': "🎓 For beginners: Start small to learn. We recommend $500-$5,000 to safely explore strategies."
-            },
-            'intermediate': {
-                'min': 1000.0,
-                'recommended': 25000.0,
-                'max': 100000.0,
-                'message': "📊 For intermediate users: Moderate capital allows better diversification. Recommended: $10K-$50K."
-            },
-            'advanced': {
-                'min': 10000.0,
-                'recommended': 250000.0,
-                'max': 10000000.0,
-                'message': "🚀 For advanced users: Large capital enables full strategy deployment. Recommended: $100K+."
+        # 🦊 NEW: Wallet Connection Options
+        st.markdown("### 💼 Choose Your Method")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # 多语言文本
+            wallet_texts = {
+                'en': {
+                    'title': '🦊 **Connect Wallet** (Recommended)',
+                    'caption': 'Use your real Stellar wallet balance',
+                    'balance': '✅ Wallet Balance:',
+                    'use_balance': '💰 Use Wallet Balance',
+                    'using_balance': '✅ Using wallet balance:'
+                },
+                'zh': {
+                    'title': '🦊 **连接钱包** (推荐)',
+                    'caption': '使用你的真实 Stellar 钱包余额',
+                    'balance': '✅ 钱包余额:',
+                    'use_balance': '💰 使用钱包余额',
+                    'using_balance': '✅ 使用钱包余额:'
+                }
             }
-        }
-        
-        rec = tier_recommendations[tier]
-        
-        # Display tier-specific guidance
-        st.info(rec['message'])
-        
-        # Quick preset buttons
-        st.markdown("**Quick Presets:**")
-        col1, col2, col3, col4 = st.columns(4)
-        
-        # Define presets (use float for consistency with number_input)
-        presets = [
-            ("$1K", 1000.0),
-            ("$10K", 10000.0),
-            ("$100K", 100000.0),
-            ("$1M", 1000000.0)
-        ]
-        
-        # Display preset buttons
-        for col, (label, amount) in zip([col1, col2, col3, col4], presets):
-            with col:
-                # Check if amount is within tier limits
-                is_disabled = amount < rec['min'] or amount > rec['max']
-                button_label = f"{label} {'🔒' if is_disabled else ''}"
+            
+            current_language = st.session_state.get('language', 'en')
+            wallet_text = wallet_texts.get(current_language, wallet_texts['en'])
+            
+            st.info(wallet_text['title'])
+            st.caption(wallet_text['caption'])
+            
+            # Import wallet connector
+            from app.wallet_connector import render_wallet_connector, is_wallet_connected, get_wallet_balance
+            
+            # Render wallet connector
+            wallet_connector = render_wallet_connector()
+            
+            # Check if wallet is connected
+            wallet_connected = is_wallet_connected()
+            if wallet_connected:
+                wallet_balance = get_wallet_balance()
+                st.success(f"{wallet_text['balance']} {wallet_balance:,.2f} XLM")
                 
-                if st.button(button_label, key=f"preset_{amount}", disabled=is_disabled):
-                    st.session_state.temp_capital = amount
+                # Option to use wallet balance
+                if st.button(wallet_text['use_balance'], type="primary"):
+                    # Convert XLM to USD (using fixed rate $0.31)
+                    usd_equivalent = wallet_balance * 0.31
+                    st.session_state.initial_capital_usd = usd_equivalent
+                    st.session_state.xlm_balance = wallet_balance
+                    st.session_state.use_wallet_balance = True
+                    st.success(f"{wallet_text['using_balance']} {wallet_balance:,.2f} XLM (≈${usd_equivalent:,.2f})")
                     st.rerun()
         
-        # Show help for locked presets
-        locked_presets = [label for label, amount in presets if amount < rec['min'] or amount > rec['max']]
-        if locked_presets:
-            st.caption(f"🔒 Locked presets are outside your tier's limits. Upgrade tier to unlock.")
-        
-        # Custom input with validation
-        default_capital = st.session_state.get('temp_capital', rec['recommended'])
-        
-        # 🔧 FIX: Ensure default_capital is float (streamlit requires consistent types)
-        default_capital = float(default_capital)
-        
-        # Ensure default is within tier limits
-        if default_capital < rec['min']:
-            default_capital = rec['min']
-        elif default_capital > rec['max']:
-            default_capital = rec['max']
-        
-        capital_usd = st.number_input(
-            f"Enter your capital (${rec['min']:,.0f} - ${rec['max']:,.0f} USD):",
-            min_value=rec['min'],
-            max_value=rec['max'],
-            value=default_capital,
-            step=1000.0,
-            key='capital_input',
-            help=f"This amount will be converted to XLM for simulated trading on Stellar testnet."
-        )
-        
-        # Save to session state
-        st.session_state.initial_capital_usd = capital_usd
-        
-        # Real-time conversion (using FIXED price $0.31)
-        FIXED_XLM_PRICE = 0.31
-        xlm_amount = capital_usd / FIXED_XLM_PRICE
-        
-        # 💰 IMPORTANT: Also update xlm_balance immediately for display purposes
-        # This ensures the "Initial Asset" and "Configuration Summary" sections show the correct amount
-        st.session_state.xlm_balance = xlm_amount
-        
-        st.markdown("---")
-        st.markdown("### 💱 Conversion Preview")
-        
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("💵 USD Capital", f"${capital_usd:,.0f}")
         with col2:
-            st.metric("💎 XLM Equivalent", f"{xlm_amount:,.0f} XLM")
-        with col3:
-            st.metric("📊 XLM Price (Fixed)", f"${FIXED_XLM_PRICE}")
+            # 多语言文本
+            manual_texts = {
+                'en': {
+                    'title': '💰 **Manual Input** (For Testing)',
+                    'caption': 'Set custom amount for simulation'
+                },
+                'zh': {
+                    'title': '💰 **手动输入** (测试用)',
+                    'caption': '设置自定义金额进行模拟'
+                }
+            }
+            
+            manual_text = manual_texts.get(current_language, manual_texts['en'])
+            
+            st.info(manual_text['title'])
+            st.caption(manual_text['caption'])
+            
+            # Tier-based recommendations
+            tier = st.session_state.user_tier
+            tier_recommendations = {
+                'beginner': {
+                    'min': 100.0,
+                    'recommended': 1000.0,
+                    'max': 10000.0,
+                    'message': "🎓 For beginners: Start small to learn. We recommend $500-$5,000 to safely explore strategies."
+                },
+                'intermediate': {
+                    'min': 1000.0,
+                    'recommended': 25000.0,
+                    'max': 100000.0,
+                    'message': "📊 For intermediate users: Moderate capital allows better diversification. Recommended: $10K-$50K."
+                },
+                'advanced': {
+                    'min': 10000.0,
+                    'recommended': 250000.0,
+                    'max': 1000000.0,  # 🎯 最大1M美元
+                    'message': "🚀 For advanced users: Large capital enables full strategy deployment. Recommended: $100K+."
+                }
+            }
+            
+            rec = tier_recommendations[tier]
+            
+            # Display tier-specific guidance
+            st.info(rec['message'])
+            
+            # Quick preset buttons
+            st.markdown("**Quick Presets:**")
+            preset_col1, preset_col2, preset_col3, preset_col4 = st.columns(4)
+            
+            # Define presets (use float for consistency with number_input)
+            presets = [
+                ("$1K", 1000.0),
+                ("$10K", 10000.0),
+                ("$100K", 100000.0),
+                ("$1M", 1000000.0)
+            ]
         
-        st.caption("🔒 This is **simulated capital** for testing strategies. No real funds required on Stellar testnet.")
-        
-        # Warning for mismatched tier/capital
-        if tier == 'beginner' and capital_usd > 10000:
-            st.warning("⚠️  You selected Beginner tier but large capital. Consider Intermediate tier for better risk management.")
-        elif tier == 'advanced' and capital_usd < 10000:
-            st.info("💡 Advanced tier with small capital? Most advanced strategies work better with larger amounts.")
+            # Display preset buttons
+            for col, (label, amount) in zip([preset_col1, preset_col2, preset_col3, preset_col4], presets):
+                with col:
+                    # Check if amount is within tier limits
+                    is_disabled = amount < rec['min'] or amount > rec['max']
+                    button_label = f"{label} {'🔒' if is_disabled else ''}"
+                    
+                    if st.button(button_label, key=f"preset_{amount}", disabled=is_disabled):
+                        st.session_state.temp_capital = amount
+                        st.rerun()
+            
+            # Show help for locked presets
+            locked_presets = [label for label, amount in presets if amount < rec['min'] or amount > rec['max']]
+            if locked_presets:
+                st.caption(f"🔒 Locked presets are outside your tier's limits. Upgrade tier to unlock.")
+            
+            # Custom input with validation
+            default_capital = st.session_state.get('temp_capital', rec['recommended'])
+            
+            # 🔧 FIX: Ensure default_capital is float (streamlit requires consistent types)
+            default_capital = float(default_capital)
+            
+            # Ensure default is within tier limits
+            if default_capital < rec['min']:
+                default_capital = rec['min']
+            elif default_capital > rec['max']:
+                default_capital = rec['max']
+            
+            capital_usd = st.number_input(
+                f"Enter your capital (${rec['min']:,.0f} - ${rec['max']:,.0f} USD):",
+                min_value=rec['min'],
+                max_value=rec['max'],
+                value=default_capital,
+                step=1000.0,
+                key='capital_input',
+                help=f"This amount will be converted to XLM for simulated trading on Stellar testnet."
+            )
+            
+            # Save to session state
+            st.session_state.initial_capital_usd = capital_usd
+            
+            # Real-time conversion (using FIXED price $0.31)
+            FIXED_XLM_PRICE = 0.31
+            xlm_amount = capital_usd / FIXED_XLM_PRICE
+            
+            # 💰 IMPORTANT: Also update xlm_balance immediately for display purposes
+            # This ensures the "Initial Asset" and "Configuration Summary" sections show the correct amount
+            st.session_state.xlm_balance = xlm_amount
+            
+            st.markdown("---")
+            st.markdown("### 💱 Conversion Preview")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("💵 USD Capital", f"${capital_usd:,.0f}")
+            with col2:
+                st.metric("💎 XLM Equivalent", f"{xlm_amount:,.0f} XLM")
+            with col3:
+                st.metric("📊 XLM Price (Fixed)", f"${FIXED_XLM_PRICE}")
+            
+            st.caption("🔒 This is **simulated capital** for testing strategies. No real funds required on Stellar testnet.")
+            
+            # Warning for mismatched tier/capital
+            if tier == 'beginner' and capital_usd > 10000:
+                st.warning("⚠️  You selected Beginner tier but large capital. Consider Intermediate tier for better risk management.")
+            elif tier == 'advanced' and capital_usd < 10000:
+                st.info("💡 Advanced tier with small capital? Most advanced strategies work better with larger amounts.")
         
         st.markdown("---")
         
