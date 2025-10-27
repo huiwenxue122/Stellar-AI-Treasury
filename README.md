@@ -801,6 +801,11 @@ This project is licensed under the **MIT License** - see the [LICENSE](LICENSE) 
 Built for the **Stellar Hackoween Hackathon** 🎃  
 Special thanks to the Stellar Development Foundation for creating an amazing blockchain ecosystem!
 
+### Authors
+- Chloe Zhang: Quantitative Analyst + AI Engineer, Boston University 
+- Claire Xue: Machine Learning & AI Engineer, Brown University
+- Linna Li: Software Engineer & Real Estate Investor, Cornell University
+
 ---
 
 **Built with ❤️ for the Stellar ecosystem**
