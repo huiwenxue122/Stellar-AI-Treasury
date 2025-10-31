@@ -566,7 +566,7 @@ stellar contract invoke \
 
 [![Watch Demo Video](https://img.shields.io/badge/▶️_Watch-Demo_Video-red?style=for-the-badge&logo=youtube)](https://youtu.be/bI2uUp7cqa8)
 
-> **📺 [Click here to watch the full demo on YouTube](https://youtu.be/bI2uUp7cqa8)**  
+> **📺 [Click here to watch the full demo on YouTube](https://youtu.be/Oo2z6eTNao8)**  
 > _Duration: ~5 minutes | Shows: AI agents, smart contract, risk management_
 
 **How to create your demo video:**
